@@ -642,8 +642,8 @@ class _ProductTile extends StatelessWidget {
     final imageUrl = imagePath.startsWith('http') ? imagePath : AppUrl.baseUrlM + imagePath;
     final price = item.price;
     final priceStr = price != null
-        ? '\$ ${price.toDouble().toStringAsFixed(2)}'
-        : '\$ —';
+        ? '\$${price.toDouble().toStringAsFixed(2)}'
+        : '\$—';
     final stars = double.tryParse(item.stars?.toString() ?? '0') ?? 0.0;
     final int filledStars = stars.round().clamp(0, 5);
 

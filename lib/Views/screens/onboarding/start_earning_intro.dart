@@ -4,29 +4,15 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/helper/colors.dart';
 import 'package:jebby/Views/screens/onboarding/onboarding_scaffold.dart';
 import 'package:jebby/Views/screens/onboarding/what_youll_need.dart';
-import 'package:jebby/view_model/onboarding_controller.dart';
 
-class StartEarningIntroScreen extends StatefulWidget {
+class StartEarningIntroScreen extends StatelessWidget {
   const StartEarningIntroScreen({super.key});
-
-  @override
-  State<StartEarningIntroScreen> createState() => _StartEarningIntroScreenState();
-}
-
-class _StartEarningIntroScreenState extends State<StartEarningIntroScreen> {
-  late final OnboardingController _controller =
-      ensureOnboardingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.advanceTo(1);
-  }
 
   @override
   Widget build(BuildContext context) {
     return OnboardingScaffold(
-      currentStep: 1,
+      showStepProgress: false,
+      showBackButton: false,
       title: 'Start Earning',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -82,10 +68,7 @@ class _StartEarningIntroScreenState extends State<StartEarningIntroScreen> {
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
         child: OnboardingPrimaryButton(
           label: 'Continue',
-          onPressed: () {
-            _controller.advanceTo(2);
-            Get.to(() => const WhatYoullNeedScreen());
-          },
+          onPressed: () => Get.to(() => const WhatYoullNeedScreen()),
         ),
       ),
     );

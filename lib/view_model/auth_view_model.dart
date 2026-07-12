@@ -201,7 +201,7 @@ class AuthViewModel with ChangeNotifier {
         // After successful signup, go to MainScreen - Stripe onboarding will be handled when user becomes provider
         Get.offAll(() => MainScreen());
       } else if (value["message"].toString() == "invalid OTP") {
-        Utils.flushBarErrorMessage('invalid OTP', context);
+        Utils.flushBarErrorMessage('Invalid OTP', context);
       } else {
         Utils.flushBarErrorMessage('Something went wrong', context);
       }
@@ -362,7 +362,7 @@ class AuthViewModel with ChangeNotifier {
             Utils.flushBarSuccessMessage('Otp Correct', context);
             Get.to(() => CreatePasswordScreen(email: data["email"]));
           } else if (value["message"].toString() == "otp incorrect") {
-            Utils.flushBarErrorMessage('invalid OTP', context);
+            Utils.flushBarErrorMessage('Invalid OTP', context);
           } else {
             Utils.flushBarErrorMessage('Something went wrong', context);
           }

@@ -545,7 +545,7 @@ class _ProductInquiryCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '\$ ${product.price}',
+                      '\$${product.price}',
                       style: GoogleFonts.inter(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,

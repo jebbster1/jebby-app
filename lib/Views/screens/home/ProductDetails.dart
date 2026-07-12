@@ -526,7 +526,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, _isProductOwner ? 38 : 28, 20, _isProductOwner ? 28 : 110),
+        padding: EdgeInsets.fromLTRB(20, 38, 20, _isProductOwner ? 28 : 110),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -578,7 +578,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                 ),
                 Text(
-                  '\$ ${widget.price}',
+                  '\$${widget.price}',
                   style: GoogleFonts.inter(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -1382,6 +1382,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kprimaryColor,
+                    // TODO: remove following two lines when rentals are ready
+                    disabledBackgroundColor: Colors.grey.shade400,
+                    disabledForegroundColor: Colors.white,
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1389,7 +1392,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  onPressed: () => rentClicked(context),
+                  // TODO: re-enable when rentals are ready
+                  // onPressed: () => rentClicked(context),
+                  onPressed: null,
                   child: Text(
                     'Rent Now',
                     style: GoogleFonts.inter(

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/helper/colors.dart';
 import 'package:jebby/Views/screens/onboarding/all_set.dart';
 import 'package:jebby/Views/screens/onboarding/onboarding_scaffold.dart';
-import 'package:jebby/Views/screens/onboarding/stripe_onboarding_webview.dart';
-import 'package:jebby/view_model/apiServices.dart';
+import 'package:jebby/Views/screens/onboarding/personal_details_screen.dart';
+import 'package:jebby/model/onboarding_state.dart';
 import 'package:jebby/view_model/onboarding_controller.dart';
 
 class StripeWelcomeScreen extends StatefulWidget {
@@ -21,14 +22,11 @@ class StripeWelcomeScreen extends StatefulWidget {
 }
 
 class _StripeWelcomeScreenState extends State<StripeWelcomeScreen> {
-  late final OnboardingController _controller =
-      ensureOnboardingController();
-  bool _isLoading = false;
+  late final OnboardingController _controller = ensureOnboardingController();
 
   @override
   void initState() {
     super.initState();
-    _controller.advanceTo(5);
 
     if (_controller.state.isComplete) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -37,84 +35,17 @@ class _StripeWelcomeScreenState extends State<StripeWelcomeScreen> {
     }
   }
 
-  Future<void> _launchStripeOnboarding() async {
-    if (_controller.userId.isEmpty) return;
-
-    setState(() => _isLoading = true);
-
-    ApiRepository.shared.createStripeExpressAccountLink(
-      _controller.userId,
-      (response) async {
-        if (!mounted) return;
-        if (response is Map && response.containsKey('url')) {
-          final accountId = response['account_id']?.toString();
-          await _controller.markStripePending(accountId: accountId);
-
-          await Get.to(
-            () => StripeOnboardingWebView(
-              onboardingUrl: response['url'].toString(),
-              returnUrl: response['return_url']?.toString(),
-              refreshUrl: response['refresh_url']?.toString(),
-              isFromTransactions: widget.isFromTransactions,
-            ),
-          );
-
-          if (mounted && !widget.isFromTransactions) {
-            _checkStripeAccountStatus();
-          }
-        } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Error creating Stripe account link')),
-          );
-        }
-
-        if (mounted) setState(() => _isLoading = false);
-      },
-      (error) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $error')),
-          );
-        }
-      },
-      name: _controller.userName,
-      email: _controller.userEmail,
-      phone: _controller.userPhone,
-    );
-  }
-
-  void _checkStripeAccountStatus() {
-    if (_controller.userId.isEmpty) return;
-
-    ApiRepository.shared.checkStripeAccountStatus(
-      _controller.userId,
-      (response) async {
-        if (!mounted) return;
-
-        final status = response['status']?.toString() ?? '';
-        final account = response['account'];
-        final detailsSubmitted = account is Map
-            ? (account['details_submitted'] == true)
-            : (response['details_submitted'] == true);
-        final accountId = account is Map
-            ? account['id']?.toString()
-            : response['account_id']?.toString();
-
-        if (status == 'active' || detailsSubmitted) {
-          await _controller.markComplete(accountId: accountId);
-          await _controller.completeProviderRole();
-          Get.off(() => const AllSetScreen());
-        }
-      },
-      (_) {},
-    );
+  Future<void> _continue() async {
+    await _controller.markIntroSeen();
+    await _controller.advanceTo(OnboardingSteps.formStart);
+    if (!mounted) return;
+    Get.to(() => const PersonalDetailsScreen());
   }
 
   @override
   Widget build(BuildContext context) {
     return OnboardingScaffold(
-      currentStep: 5,
+      showStepProgress: false,
       title: 'Verification',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -145,12 +76,55 @@ class _StripeWelcomeScreenState extends State<StripeWelcomeScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Stripe handles identity verification, bank account setup, and secure payouts so you can focus on renting your items.',
+            'Complete a few quick steps in the app to verify your identity and connect your bank account for payouts.',
             style: GoogleFonts.inter(
               fontSize: 15,
               color: Colors.black54,
               height: 1.5,
             ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Trusted by global companies',
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Amazon, Airbnb, Uber, and millions of businesses partner with Stripe for payments and payouts.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: Colors.black54,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: const [
+              Expanded(
+                child: _StripePartnerChip(
+                  logoAsset: 'assets/onboarding/stripe_partners/amazon.svg',
+                  logoColor: Color(0xFF232F3E),
+                ),
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: _StripePartnerChip(
+                  logoAsset: 'assets/onboarding/stripe_partners/airbnb.svg',
+                  logoColor: Color(0xFFFF5A5F),
+                ),
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: _StripePartnerChip(
+                  logoAsset: 'assets/onboarding/stripe_partners/uber.svg',
+                  logoColor: Color(0xFF09091A),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 24),
           const _BenefitItem(
@@ -165,7 +139,7 @@ class _StripeWelcomeScreenState extends State<StripeWelcomeScreen> {
           const SizedBox(height: 12),
           const _BenefitItem(
             icon: Icons.fact_check_outlined,
-            text: 'Quick identity verification with your government ID',
+            text: 'Upload your government ID for identity verification',
           ),
           const SizedBox(height: 24),
           const OnboardingStripeFooter(),
@@ -185,9 +159,54 @@ class _StripeWelcomeScreenState extends State<StripeWelcomeScreen> {
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
         child: OnboardingPrimaryButton(
           label: 'Continue',
-          isLoading: _isLoading,
-          onPressed: _launchStripeOnboarding,
+          onPressed: _continue,
         ),
+      ),
+    );
+  }
+}
+
+class _StripePartnerChip extends StatelessWidget {
+  final String logoAsset;
+  final Color logoColor;
+
+  const _StripePartnerChip({
+    required this.logoAsset,
+    required this.logoColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 28,
+            child: SvgPicture.asset(
+              logoAsset,
+              height: 28,
+              fit: BoxFit.contain,
+              colorFilter: ColorFilter.mode(logoColor, BlendMode.srcIn),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Uses Stripe',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: Colors.black45,
+            ),
+          ),
+        ],
       ),
     );
   }

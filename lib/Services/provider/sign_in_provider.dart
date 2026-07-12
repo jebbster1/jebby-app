@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -27,6 +28,120 @@ class UserNameProvider extends ChangeNotifier {
 }
 
 class SignInProvider extends ChangeNotifier {
+  static const _appleEmailPrefsPrefix = 'apple_sign_in_email_';
+  static const _appleNamePrefsPrefix = 'apple_sign_in_name_';
+
+  String? _emailFromAppleIdentityToken(String? identityToken) {
+    if (identityToken == null || identityToken.isEmpty) return null;
+    try {
+      final parts = identityToken.split('.');
+      if (parts.length < 2) return null;
+      final payload = parts[1];
+      final normalized = base64Url.normalize(payload);
+      final decoded = utf8.decode(base64Url.decode(normalized));
+      final map = jsonDecode(decoded) as Map<String, dynamic>;
+      final email = map['email']?.toString().trim();
+      if (email != null && email.contains('@')) return email;
+    } catch (_) {}
+    return null;
+  }
+
+  String _buildAppleDisplayName(String? givenName, String? familyName) {
+    final parts = <String>[];
+    if (givenName != null && givenName.trim().isNotEmpty) {
+      parts.add(givenName.trim());
+    }
+    if (familyName != null && familyName.trim().isNotEmpty) {
+      parts.add(familyName.trim());
+    }
+    return parts.join(' ');
+  }
+
+  String? _emailFromFirebaseUser(User? user) {
+    if (user == null) return null;
+
+    final primaryEmail = user.email?.trim();
+    if (primaryEmail != null &&
+        primaryEmail.isNotEmpty &&
+        primaryEmail.contains('@')) {
+      return primaryEmail;
+    }
+
+    for (final profile in user.providerData) {
+      if (profile.providerId == 'apple.com') {
+        final providerEmail = profile.email?.trim();
+        if (providerEmail != null &&
+            providerEmail.isNotEmpty &&
+            providerEmail.contains('@')) {
+          return providerEmail;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  Future<String?> _readCachedAppleEmail(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('$_appleEmailPrefsPrefix$uid');
+  }
+
+  Future<String?> _readCachedAppleName(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('$_appleNamePrefsPrefix$uid');
+  }
+
+  Future<void> _cacheAppleProfile({
+    required String uid,
+    required String email,
+    required String fullName,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (email.contains('@')) {
+      await prefs.setString('$_appleEmailPrefsPrefix$uid', email);
+    }
+    if (fullName.trim().isNotEmpty) {
+      await prefs.setString('$_appleNamePrefsPrefix$uid', fullName.trim());
+    }
+  }
+
+  Future<({String email, String fullName})?> _resolveAppleProfile({
+    required AuthorizationCredentialAppleID appleCredential,
+    required User? user,
+  }) async {
+    final uid = user?.uid ?? '';
+    var email = appleCredential.email?.trim();
+    email ??= _emailFromAppleIdentityToken(appleCredential.identityToken);
+    email ??= _emailFromFirebaseUser(user);
+    if (uid.isNotEmpty) {
+      email ??= await _readCachedAppleEmail(uid);
+    }
+
+    var fullName = _buildAppleDisplayName(
+      appleCredential.givenName,
+      appleCredential.familyName,
+    );
+    if (fullName.isEmpty) {
+      fullName = user?.displayName?.trim() ?? '';
+    }
+    if (fullName.isEmpty && uid.isNotEmpty) {
+      fullName = (await _readCachedAppleName(uid))?.trim() ?? '';
+    }
+    if (fullName.isEmpty) {
+      fullName = 'Apple User';
+    }
+
+    if (email == null || email.isEmpty || !email.contains('@')) {
+      return null;
+    }
+
+    if (uid.isNotEmpty) {
+      await _cacheAppleProfile(uid: uid, email: email, fullName: fullName);
+    }
+
+    return (email: email, fullName: fullName);
+  }
+
   // instance of firebaseauth, facebook and google
   final FirebaseAuth firebaseAuth = FirebaseAuth.instance;
   final FacebookAuth facebookAuth = FacebookAuth.instance;
@@ -490,63 +605,63 @@ class SignInProvider extends ChangeNotifier {
 
   Future signInWithApple(value, BuildContext context) async {
     final authViewMode = Provider.of<AuthViewModel>(context, listen: false);
+    _hasError = false;
+    _errorCode = null;
 
     try {
-      // final AppleProvider = AppleAuthProvider();
-      // final userData = await FirebaseAuth.instance.signInWithProvider(AppleProvider);
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
       );
+      print('Apple Login Family Name: ${appleCredential.familyName}');
+      print('Apple Login Given Name: ${appleCredential.givenName}');
+      print('Apple Login Email: ${appleCredential.email}');
 
       final oauthCredential = OAuthProvider("apple.com").credential(
         idToken: appleCredential.identityToken,
         accessToken: appleCredential.authorizationCode,
       );
 
+      print('Apple Login OAuth Credentials Full Name: ${oauthCredential.appleFullPersonName}');
+  
       final userData = await FirebaseAuth.instance.signInWithCredential(
         oauthCredential,
       );
+      final user = userData.user;
+      print('firebase user: ${userData.user}');
+      final profile = await _resolveAppleProfile(
+        appleCredential: appleCredential,
+        user: user,
+      );
 
-      // Check if the user data is available
-      String? displayName =
-          "${appleCredential.givenName} ${appleCredential.familyName}";
-      String? email = appleCredential.email;
-      final user = FirebaseAuth.instance.currentUser;
-      if (displayName == "" || email == null) {
-        // Fetch user data from Firebase
-        displayName = user?.displayName ?? "Apple User";
-        email = user?.email ?? userData.user!.uid;
-
-        // Update user profile if needed
-        // if (user != null && (user.displayName == null || user.email == null)) {
-        //   // ignore: deprecated_member_use
-        //   await user.updateProfile(displayName: displayName);
-        //   await user.reload();
-        // }
+      if (profile == null) {
+        _errorCode =
+            "Apple account email is not available. Remove Jebby from Apple ID settings (Settings → Apple ID → Sign in with Apple), then sign in again.";
+        _hasError = true;
+        notifyListeners();
+        return;
       }
-      if (user != null && (user.displayName == null || user.email == null)) {
+
+      if (user != null &&
+          (user.displayName == null || user.displayName!.trim().isEmpty)) {
         // ignore: deprecated_member_use
-        await user.updateProfile(displayName: displayName);
-        // ignore: deprecated_member_use
-        // await user.updateEmail(email);
+        await user.updateProfile(displayName: profile.fullName);
         await user.reload();
       }
 
-      // save in registerApi
       if (userData.user != null) {
         Map data = {
-          "full_name": displayName,
-          "email": email,
+          "full_name": profile.fullName,
+          "email": profile.email,
           "password": "",
           "source": "APPLE",
           "role": value.toString(),
         };
         authViewMode.signUpApiWithSocials(data, context);
         notifyListeners();
-      } else {}
+      }
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
         case "account-exists-with-different-credential":

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resource>
+<resources>
 
-    <string name="app_name">jebby</string>
+    <string name="app_name">Jebby</string>
     <string name="facebook_app_id">2014559258906156</string>
     <string name="fb_login_protocol_scheme">fb2014559258906156</string>
     <string name="facebook_client_token">97d3bb3191f1a0d7808e936c66cbbe21</string>
 
-</resource>
+</resources>

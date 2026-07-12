@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/cupertino.dart';
@@ -88,7 +89,14 @@ class _EditProductScreenState extends State<EditProductScreen> {
   late var sub_length;
   List<XFile> imageFileList = [];
   List imagesPath = [];
+  List<String> _existingImageUrls = [];
+  List<dynamic> _existingImageIds = [];
+  final List<dynamic> _deletedImageIds = [];
+  bool _imagesModified = false;
   List<dynamic> image_document = [];
+
+  int get _totalImageCount => _existingImageUrls.length + imageFileList.length;
+  bool get _hasImages => _totalImageCount > 0;
 
   TextEditingController nameController = TextEditingController();
   TextEditingController specsController = TextEditingController();
@@ -236,6 +244,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
     assign();
     getCatId();
     getSubCatID();
+    getSubCategory(selected_id);
     getData();
     profileData(context);
     getCategory();
@@ -245,6 +254,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
   bool negotiationVisibility = true;
 
   void assign() {
+    _loadExistingImages();
     switchnot = widget.negotiation.toString() == "0" ? true : false;
     negotiationVisibility = widget.negotiation.toString() == "0" ? false : true;
     messageSwitchNot = widget.messageStatus == 1 ? true : false;
@@ -288,6 +298,116 @@ class _EditProductScreenState extends State<EditProductScreen> {
       if (data0.latitude != null) locationLat = data0.latitude.toString();
       if (data0.longitude != null) locationLng = data0.longitude.toString();
     }
+  }
+
+  void _markImagesModified() => _imagesModified = true;
+
+  void _loadExistingImages() {
+    _existingImageUrls = [];
+    _existingImageIds = [];
+    _deletedImageIds.clear();
+    _imagesModified = false;
+
+    final rawImages = widget.images;
+    if (rawImages is List) {
+      for (final item in rawImages) {
+        if (item == null) continue;
+        final path = item.toString().trim();
+        if (path.isNotEmpty) _existingImageUrls.add(path);
+      }
+    }
+
+    final rawIds = widget.imageID;
+    if (rawIds is List) {
+      _existingImageIds.addAll(rawIds);
+    }
+
+    if (_existingImageUrls.isEmpty) {
+      final data = ApiRepository.shared.getProductsByIdList?.data;
+      if (data != null && data.length > 1 && data[1].images != null) {
+        for (final img in data[1].images!) {
+          final path = img.path?.toString().trim() ?? '';
+          if (path.isNotEmpty) _existingImageUrls.add(path);
+          if (img.id != null) _existingImageIds.add(img.id);
+        }
+      }
+    }
+
+    while (_existingImageIds.length < _existingImageUrls.length) {
+      _existingImageIds.add(null);
+    }
+  }
+
+  String _remoteImageUrl(String path) {
+    if (path.startsWith('http')) return path;
+    return '${AppUrl.baseUrlM}$path';
+  }
+
+  Widget _buildImageAt(
+    int index, {
+    double? width,
+    double? height,
+    BoxFit fit = BoxFit.cover,
+  }) {
+    if (index < _existingImageUrls.length) {
+      return CachedNetworkImage(
+        imageUrl: _remoteImageUrl(_existingImageUrls[index]),
+        width: width,
+        height: height,
+        fit: fit,
+        placeholder:
+            (_, __) => Container(
+              width: width,
+              height: height,
+              color: Colors.grey.shade300,
+            ),
+        errorWidget:
+            (_, __, ___) => Container(
+              width: width,
+              height: height,
+              color: Colors.grey.shade300,
+              child: const Icon(Icons.broken_image_outlined),
+            ),
+      );
+    }
+
+    final localIndex = index - _existingImageUrls.length;
+    return Image.file(
+      File(imageFileList[localIndex].path),
+      width: width,
+      height: height,
+      fit: fit,
+    );
+  }
+
+  void _adjustActiveIndexAfterRemoval(int removedIndex) {
+    if (_activeImageIndex > removedIndex) {
+      _activeImageIndex--;
+    } else if (_activeImageIndex >= _totalImageCount) {
+      _activeImageIndex = _totalImageCount > 0 ? _totalImageCount - 1 : 0;
+    }
+  }
+
+  void _removeImageAt(int index) {
+    if (index < _existingImageUrls.length) {
+      if (index < _existingImageIds.length && _existingImageIds[index] != null) {
+        _deletedImageIds.add(_existingImageIds[index]);
+      }
+      _existingImageUrls.removeAt(index);
+      if (index < _existingImageIds.length) {
+        _existingImageIds.removeAt(index);
+      }
+    } else {
+      final localIndex = index - _existingImageUrls.length;
+      if (localIndex >= 0 && localIndex < imageFileList.length) {
+        if (localIndex < imagesPath.length) {
+          imagesPath.removeAt(localIndex);
+        }
+        imageFileList.removeAt(localIndex);
+      }
+    }
+    _markImagesModified();
+    _adjustActiveIndexAfterRemoval(index);
   }
 
   void _onLocationChanged() {
@@ -456,23 +576,47 @@ class _EditProductScreenState extends State<EditProductScreen> {
         if (this.mounted)
           {
             if (list.status == 0)
-              {sub_items.add("No Category Found")}
+              {
+                setState(() {
+                  sub_items = ["No Category Found"];
+                  sub_cats_loader = false;
+                }),
+              }
             else
               {
                 sub_length = ApiRepository.shared.subCategoryList?.data?.length,
+                sub_items = [],
+                sub_items_id = [],
                 for (int i = 0; i < sub_length!; i++)
                   {
                     sub_name =
                         ApiRepository.shared.subCategoryList?.data?[i].name,
                     sub_id = ApiRepository.shared.subCategoryList?.data?[i].id,
-                    sub_items.add(sub_name),
+                    sub_items.add(sub_name.toString()),
                     sub_items_id.add(sub_id),
                   },
                 setState(() {
-                  selected_sub_id = sub_items_id.first;
-                  sub_dropdownvalue = sub_items.first;
-                  sub_cat_value = sub_items.first;
                   sub_cats_loader = false;
+                  final targetId =
+                      selected_sub_id?.toString() ??
+                      widget.sub_category_id.toString();
+                  final idx = sub_items_id.indexWhere(
+                    (itemId) => itemId.toString() == targetId,
+                  );
+                  if (idx >= 0) {
+                    selected_sub_id = sub_items_id[idx];
+                    sub_cat_value = sub_items[idx];
+                    sub_dropdownvalue = sub_items[idx];
+                  } else if (sub_cat_value != null &&
+                      sub_items.contains(sub_cat_value)) {
+                    final nameIdx = sub_items.indexOf(sub_cat_value!);
+                    selected_sub_id = sub_items_id[nameIdx];
+                    sub_dropdownvalue = sub_cat_value!;
+                  } else if (sub_items.isNotEmpty) {
+                    selected_sub_id = sub_items_id.first;
+                    sub_cat_value = sub_items.first;
+                    sub_dropdownvalue = sub_items.first;
+                  }
                 }),
               },
           },
@@ -494,7 +638,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
       List<XFile>? selectedImages = await ImagePicker().pickMultiImage();
       if (selectedImages.isNotEmpty) {
         const int maxImages = 4;
-        final remaining = maxImages - imageFileList.length;
+        final remaining = maxImages - _totalImageCount;
         if (remaining <= 0) return;
 
         final imagesToAdd = selectedImages.take(remaining).toList();
@@ -503,7 +647,8 @@ class _EditProductScreenState extends State<EditProductScreen> {
           imagesPath.add(tempImage);
         }
         imageFileList.addAll(imagesToAdd);
-        _activeImageIndex = imageFileList.length - 1;
+        _markImagesModified();
+        _activeImageIndex = _totalImageCount - 1;
       }
       setState(() {});
     } catch (e) {}
@@ -513,7 +658,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
   void addOneImage() async {
     try {
       const int maxImages = 4;
-      if (imageFileList.length >= maxImages) return;
+      if (_totalImageCount >= maxImages) return;
 
       final XFile? image = await ImagePicker().pickImage(
         source: ImageSource.gallery,
@@ -523,7 +668,8 @@ class _EditProductScreenState extends State<EditProductScreen> {
       setState(() {
         imagesPath.add(tempImage);
         imageFileList.add(image);
-        _activeImageIndex = imageFileList.length - 1;
+        _markImagesModified();
+        _activeImageIndex = _totalImageCount - 1;
       });
     } catch (_) {}
   }
@@ -537,14 +683,30 @@ class _EditProductScreenState extends State<EditProductScreen> {
       if (image == null) return;
       final tempImage = File(image.path);
       setState(() {
-        if (imageFileList.isEmpty || imagesPath.isEmpty) {
+        _markImagesModified();
+        if (!_hasImages) {
           imagesPath = [tempImage];
           imageFileList = [image];
           _activeImageIndex = 0;
+          return;
+        }
+
+        final idx = _activeImageIndex.clamp(0, _totalImageCount - 1);
+        if (idx < _existingImageUrls.length) {
+          if (idx < _existingImageIds.length && _existingImageIds[idx] != null) {
+            _deletedImageIds.add(_existingImageIds[idx]);
+          }
+          _existingImageUrls.removeAt(idx);
+          if (idx < _existingImageIds.length) {
+            _existingImageIds.removeAt(idx);
+          }
+          imagesPath.add(tempImage);
+          imageFileList.add(image);
+          _activeImageIndex = _totalImageCount - 1;
         } else {
-          final idx = _activeImageIndex.clamp(0, imageFileList.length - 1);
-          imagesPath[idx] = tempImage;
-          imageFileList[idx] = image;
+          final localIdx = idx - _existingImageUrls.length;
+          imagesPath[localIdx] = tempImage;
+          imageFileList[localIdx] = image;
         }
       });
     } catch (_) {}
@@ -618,6 +780,56 @@ class _EditProductScreenState extends State<EditProductScreen> {
     return ProductDeleteImageModel();
   }
 
+  Future<bool> _deleteRemoteImageSilently(String imageId) async {
+    final request = json.encode(<String, dynamic>{"id": imageId});
+    final response = await http.post(
+      Uri.parse(AppUrl.productDeleteImage),
+      body: request,
+      headers: {'Content-type': "application/json"},
+    );
+    return response.statusCode == 200;
+  }
+
+  Future<bool> _syncProductImages() async {
+    if (!_imagesModified) return true;
+
+    try {
+      if (imageFileList.isNotEmpty) {
+        image_document = [];
+        for (final file in imageFileList) {
+          image_document.add(
+            await d.MultipartFile.fromFile(
+              file.path,
+              filename: DateTime.now().millisecondsSinceEpoch.toString(),
+            ),
+          );
+        }
+
+        final formData = d.FormData.fromMap({
+          "file": image_document,
+          "id": widget.product_id.toString(),
+        });
+
+        final response = await d.Dio().post(
+          AppUrl.productUpdateImage,
+          data: formData,
+        );
+        if (response.statusCode != 200) return false;
+      }
+
+      for (final imageId in List<dynamic>.from(_deletedImageIds)) {
+        if (imageId == null) continue;
+        final deleted = await _deleteRemoteImageSilently(imageId.toString());
+        if (!deleted) return false;
+      }
+      _deletedImageIds.clear();
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   updateImage() async {
     setState(() {
       img_button = true;
@@ -675,6 +887,18 @@ class _EditProductScreenState extends State<EditProductScreen> {
     setState(() {
       product_update_button = true;
     });
+
+    if (!_hasImages) {
+      Get.snackbar(
+        'Required',
+        'You need to select at least 1 image',
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 2),
+      );
+      setState(() => product_update_button = false);
+      return;
+    }
+
     if (DateTime.parse(
           pasd.toString(),
         ).isAfter(DateTime.parse(paed.toString())) ||
@@ -712,7 +936,21 @@ class _EditProductScreenState extends State<EditProductScreen> {
         setState(() => product_update_button = false);
         return;
       }
-      ApiRepository.shared.productUpdate(
+
+      if (_imagesModified) {
+        final imagesSynced = await _syncProductImages();
+        if (!imagesSynced) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Failed to update product images')),
+            );
+          }
+          setState(() => product_update_button = false);
+          return;
+        }
+      }
+
+      await ApiRepository.shared.productUpdate(
         id,
         selected_id,
         selected_sub_id.toString(),
@@ -831,25 +1069,25 @@ class _EditProductScreenState extends State<EditProductScreen> {
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color:
-                      imageFileList.isEmpty
+                      !_hasImages
                           ? Colors.grey.shade300
                           : Colors.white,
                   border:
-                      imageFileList.isEmpty
+                      !_hasImages
                           ? Border.all(color: Colors.grey.shade400, width: 1)
                           : null,
                 ),
                 child: Stack(
                   children: [
-                    if (imageFileList.isNotEmpty)
+                    if (_hasImages)
                       Positioned.fill(
-                        child: Image.file(
-                          File(imageFileList[_activeImageIndex].path),
+                        child: _buildImageAt(
+                          _activeImageIndex.clamp(0, _totalImageCount - 1),
                           fit: BoxFit.cover,
                         ),
                       ),
 
-                    if (imageFileList.isEmpty)
+                    if (!_hasImages)
                       Center(
                         child: _glassPill(
                           onTap: addOneImage,
@@ -883,7 +1121,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
                         ),
                       ),
 
-                    if (imageFileList.isNotEmpty && imageFileList.length < 4)
+                    if (_hasImages && _totalImageCount < 4)
                       Positioned(
                         top: 15,
                         left: 15,
@@ -917,7 +1155,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
                         ),
                       ),
 
-                    if (imageFileList.isNotEmpty && imageFileList.length < 4)
+                    if (_hasImages && _totalImageCount < 4)
                       Positioned(
                         bottom: 15,
                         right: 15,
@@ -956,26 +1194,24 @@ class _EditProductScreenState extends State<EditProductScreen> {
               ),
             ),
 
-            SizedBox(height: imageFileList.isEmpty ? 8 : 20),
-            if (imageFileList.isNotEmpty)
+            SizedBox(height: !_hasImages ? 8 : 20),
+            if (_hasImages)
               SizedBox(
                 height: 86,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount:
-                      imageFileList.isEmpty
-                          ? 0
-                          : (imageFileList.length < 4
-                              ? imageFileList.length + 1
-                              : imageFileList.length),
+                      _totalImageCount < 4
+                          ? _totalImageCount + 1
+                          : _totalImageCount,
                   itemBuilder: (context, index) {
                     const maxImages = 4;
                     final showAddTile =
-                        imageFileList.length < maxImages &&
-                        index == imageFileList.length;
+                        _totalImageCount < maxImages &&
+                        index == _totalImageCount;
                     if (showAddTile) {
                       final activeDots =
-                          imageFileList.length < 3 ? imageFileList.length : 3;
+                          _totalImageCount < 3 ? _totalImageCount : 3;
                       return Padding(
                         padding: const EdgeInsets.only(right: 10),
                         child: GestureDetector(
@@ -1037,8 +1273,8 @@ class _EditProductScreenState extends State<EditProductScreen> {
                               },
                               child: Opacity(
                                 opacity: 0.78,
-                                child: Image.file(
-                                  File(imageFileList[imageIndex].path),
+                                child: _buildImageAt(
+                                  imageIndex,
                                   width: 92,
                                   height: 86,
                                   fit: BoxFit.cover,
@@ -1052,20 +1288,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
                             child: GestureDetector(
                               onTap: () {
                                 setState(() {
-                                  if (imageIndex < imagesPath.length) {
-                                    imagesPath.removeAt(imageIndex);
-                                  }
-                                  imageFileList.removeAt(imageIndex);
-                                  if (_activeImageIndex > imageIndex) {
-                                    _activeImageIndex--;
-                                  }
-                                  if (imageFileList.isEmpty) {
-                                    _activeImageIndex = 0;
-                                  } else if (_activeImageIndex >=
-                                      imageFileList.length) {
-                                    _activeImageIndex =
-                                        imageFileList.length - 1;
-                                  }
+                                  _removeImageAt(imageIndex);
                                 });
                               },
                               child: CircleAvatar(
@@ -1085,8 +1308,6 @@ class _EditProductScreenState extends State<EditProductScreen> {
                   },
                 ),
               ),
-
-            SizedBox(height: imageFileList.isEmpty ? 8 : 20),
 
             /// PRODUCT NAME
             Text(

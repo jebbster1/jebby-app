@@ -1,10 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import 'package:mime/mime.dart';
+import 'package:path/path.dart' as p;
 import 'package:jebby/Views/screens/vendors/MyProducts.dart';
 import 'package:jebby/model/categoryList_model.dart';
 import 'package:jebby/model/getCategoryByIdModel.dart';
@@ -55,7 +62,6 @@ import '../model/productInfoInsert.dart';
 import '../model/productUpdateModel.dart';
 import '../model/reOrderModel.dart';
 import '../model/stripePaymentModel.dart';
-import '../model/stripe_verification_model.dart';
 import '../model/stripeTransactionsModel.dart';
 import '../model/sub_category_list_model.dart';
 import '../res/app_url.dart';
@@ -106,7 +112,6 @@ class ApiRepository extends ChangeNotifier {
   GetAllOrdersByUserIdModel? getAllOrdersByUserIdModelList;
   GetFeaturedModel? getFeaturedProductsModelList;
   GetNegoByIdModel? getNegoByIdModelList;
-  StripeVerificationModel? stripeVerificationModelList;
   StripeTransactionsModel? stripeTransactionsModelList;
 
   static var shared = ApiRepository();
@@ -456,24 +461,16 @@ class ApiRepository extends ChangeNotifier {
     );
     if (response.statusCode == 200) {
       try {
-        // ProductInfoInsert data = ProductInfoInsert.fromJson(json.decode(response.body));
-
-        Get.off(() => ProductListScreen(side: false));
-
-        // if (data != null) {
-        //   // onResponse(data);
-        //   // return data;
-        // } else
-
-        //   // onError(data.message.toString());
-        // return data;
+        final data = ProductInfoInsert.fromJson(json.decode(response.body));
+        onResponse(data);
+        return data;
       } catch (error) {
-        // onError(error.toString());
+        onError(error.toString());
       }
     } else if (response.statusCode == 400) {
-      // onError("You are not in Range");
+      onError("You are not in Range");
     } else if (response.statusCode == 500) {
-      // onError("Internal Server Error");
+      onError("Internal Server Error");
     }
     return ProductInfoInsert();
   }
@@ -2165,73 +2162,9 @@ class ApiRepository extends ChangeNotifier {
     return GetNegoByIdModel();
   }
 
-  // New methods for Stripe verification
-  getStripeVerification(data) {
-    stripeVerificationModelList = data;
-    notifyListeners();
-  }
-  
   getStripeTransactions(data) {
     stripeTransactionsModelList = data;
     notifyListeners();
-  }
-  
-  // Create a verification session with Stripe Identity
-  Future<StripeVerificationModel> createVerificationSession(String userId, onResponse(StripeVerificationModel data), onError(error)) async {
-    final request = json.encode(<String, dynamic>{
-      "user_id": userId,
-    });
-
-    final response = await http.post(
-      Uri.parse("${Url}/stripe/create-verification-session"),
-      body: request,
-      headers: {
-        'Content-type': "application/json",
-      },
-    );
-    
-    if (response.statusCode == 200) {
-      try {
-        var data = StripeVerificationModel.fromJson(jsonDecode(response.body));
-        getStripeVerification(data);
-        onResponse(data);
-        return data;
-      } catch (error) {
-        onError(error.toString());
-      }
-    } else if (response.statusCode == 400) {
-      onError("Error creating verification session");
-    } else if (response.statusCode == 500) {
-      onError("Internal Server Error");
-    }
-    
-    return StripeVerificationModel();
-  }
-  
-  // Check verification status
-  Future<dynamic> checkVerificationStatus(String verificationSessionId, onResponse(dynamic data), onError(error)) async {
-    final response = await http.get(
-      Uri.parse("${Url}/stripe/verification-status/${verificationSessionId}"),
-      headers: {
-        'Content-type': "application/json",
-      },
-    );
-    
-    if (response.statusCode == 200) {
-      try {
-        var data = jsonDecode(response.body);
-        onResponse(data);
-        return data;
-      } catch (error) {
-        onError(error.toString());
-      }
-    } else if (response.statusCode == 400) {
-      onError("Error checking verification status");
-    } else if (response.statusCode == 500) {
-      onError("Internal Server Error");
-    }
-    
-    return {};
   }
 
   Future<dynamic> updateProfile(String userId, String fullName, String email, String phoneNumber, String address, double? latitude, double? longitude, onResponse(dynamic data), onError(error)) async {
@@ -2270,51 +2203,7 @@ class ApiRepository extends ChangeNotifier {
     return {};
   }
 
-  // Create Stripe Express account link
-  Future<dynamic> createStripeExpressAccountLink(
-    String userId,
-    onResponse(dynamic data),
-    onError(error), {
-    String? name,
-    String? email,
-    String? phone,
-  }) async {
-    final request = json.encode(<String, dynamic>{
-      "user_id": userId,
-      if (name != null && name.isNotEmpty) "name": name,
-      if (email != null && email.isNotEmpty) "email": email,
-      if (phone != null && phone.isNotEmpty) ...{
-        "phone": phone,
-        "phoneNumber": phone,
-      },
-    });
-
-    final response = await http.post(
-      Uri.parse("${Url}/stripe/create-express-account"),
-      body: request,
-      headers: {
-        'Content-type': "application/json",
-      },
-    );
-    
-    if (response.statusCode == 200) {
-      try {
-        var data = jsonDecode(response.body);
-        onResponse(data);
-        return data;
-      } catch (error) {
-        onError(error.toString());
-      }
-    } else if (response.statusCode == 400) {
-      onError("Error creating Stripe Express account");
-    } else if (response.statusCode == 500) {
-      onError("Internal Server Error");
-    }
-    
-    return {};
-  }
-
-  // Check Stripe Express account status
+  // Check Stripe Connect account status
   Future<dynamic> checkStripeAccountStatus(
     String userId,
     onResponse(dynamic data),
@@ -2430,6 +2319,366 @@ class ApiRepository extends ChangeNotifier {
     }
 
     return {};
+  }
+
+  Future<dio.MultipartFile> _identityImageMultipartFile(
+    String path, {
+    required String fieldName,
+  }) async {
+    final bytes = await _normalizeIdentityImageBytes(path);
+    final mimeType = lookupMimeType(
+          '',
+          headerBytes: bytes.length >= 12 ? bytes.sublist(0, 12) : bytes,
+        ) ??
+        'image/jpeg';
+
+    late String filename;
+    late MediaType contentType;
+
+    if (mimeType == 'image/png') {
+      filename = '$fieldName.png';
+      contentType = MediaType('image', 'png');
+    } else if (mimeType == 'image/webp') {
+      filename = '$fieldName.webp';
+      contentType = MediaType('image', 'webp');
+    } else {
+      filename = '$fieldName.jpg';
+      contentType = MediaType('image', 'jpeg');
+    }
+
+    return dio.MultipartFile.fromBytes(
+      bytes,
+      filename: filename,
+      contentType: contentType,
+    );
+  }
+
+  Future<Uint8List> _normalizeIdentityImageBytes(String path) async {
+    final bytes = await File(path).readAsBytes();
+    final ext = p.extension(path).toLowerCase();
+    final mimeType = lookupMimeType(
+          path,
+          headerBytes: bytes.length >= 12 ? bytes.sublist(0, 12) : bytes,
+        ) ??
+        '';
+
+    final isHeic = ext == '.heic' ||
+        ext == '.heif' ||
+        mimeType.contains('heic') ||
+        mimeType.contains('heif');
+
+    if (!isHeic && mimeType.startsWith('image/')) {
+      return bytes;
+    }
+
+    if (isHeic || !mimeType.startsWith('image/')) {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final pngData = await frame.image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      frame.image.dispose();
+      if (pngData == null) {
+        throw Exception('Could not process image. Try taking a new photo.');
+      }
+      return pngData.buffer.asUint8List();
+    }
+
+    return bytes;
+  }
+
+  static bool isGenericApiErrorMessage(String message) {
+    final lower = message.toLowerCase();
+    const genericPhrases = [
+      'temporarily unavailable',
+      'temporary unavailable',
+      'invalid onboarding submission',
+      'internal server error',
+      'something went wrong',
+      'unable to submit onboarding',
+      'unable to complete onboarding',
+      'request failed',
+      'upload failed',
+    ];
+    return genericPhrases.any((phrase) => lower.contains(phrase));
+  }
+
+  static String extractApiErrorMessage(
+    dynamic data, {
+    String fallback = 'Request failed',
+  }) {
+    final candidates = <String>[];
+    _collectApiErrorMessages(data, candidates);
+
+    if (candidates.isEmpty) {
+      final asString = data?.toString().trim() ?? '';
+      return asString.isEmpty ? fallback : asString;
+    }
+
+    final specific = candidates.where((c) => !isGenericApiErrorMessage(c)).toList();
+    if (specific.isNotEmpty) {
+      specific.sort((a, b) => b.length.compareTo(a.length));
+      return specific.first;
+    }
+
+    return candidates.first;
+  }
+
+  static void _collectApiErrorMessages(dynamic data, List<String> candidates) {
+    if (data == null) return;
+
+    if (data is Map) {
+      for (final key in [
+        'message',
+        'error',
+        'msg',
+        'detail',
+        'details',
+        'reason',
+        'description',
+        'stripe_error',
+        'stripe_message',
+      ]) {
+        final value = data[key];
+        if (value is Map) {
+          _collectApiErrorMessages(value, candidates);
+        } else if (value != null) {
+          final text = value.toString().trim();
+          if (text.isNotEmpty) candidates.add(text);
+        }
+      }
+
+      final errors = data['errors'];
+      if (errors is List) {
+        for (final item in errors) {
+          if (item is Map) {
+            final nested = item['message'] ?? item['detail'] ?? item['error'];
+            if (nested != null) {
+              final text = nested.toString().trim();
+              if (text.isNotEmpty) candidates.add(text);
+            } else {
+              _collectApiErrorMessages(item, candidates);
+            }
+          } else if (item != null) {
+            final text = item.toString().trim();
+            if (text.isNotEmpty) candidates.add(text);
+          }
+        }
+      }
+      return;
+    }
+
+    if (data is String && data.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(data);
+        if (decoded is Map || decoded is List) {
+          _collectApiErrorMessages(decoded, candidates);
+          return;
+        }
+      } catch (_) {
+        candidates.add(data.trim());
+      }
+    }
+  }
+
+  String _extractApiErrorMessage(
+    dynamic data, {
+    String fallback = 'Request failed',
+  }) =>
+      extractApiErrorMessage(data, fallback: fallback);
+
+  dynamic _tryDecodeResponseBody(String body) {
+    if (body.isEmpty) return null;
+    try {
+      return jsonDecode(body);
+    } catch (_) {
+      return body;
+    }
+  }
+
+  Future<dynamic> uploadIdentityDocument({
+    required String userId,
+    required String documentType,
+    required String frontPath,
+    String? backPath,
+    required onResponse(dynamic data),
+    required onError(error),
+  }) async {
+    try {
+      final formMap = <String, dynamic>{
+        'user_id': userId,
+        'document_type': documentType,
+        'file_front': await _identityImageMultipartFile(
+          frontPath,
+          fieldName: 'id_front',
+        ),
+      };
+
+      if (backPath != null && backPath.isNotEmpty && File(backPath).existsSync()) {
+        formMap['file_back'] = await _identityImageMultipartFile(
+          backPath,
+          fieldName: 'id_back',
+        );
+      }
+
+      final formData = dio.FormData.fromMap(formMap);
+      final response = await dio.Dio().post(
+        AppUrl.stripeProviderUploadDocument,
+        data: formData,
+        options: dio.Options(contentType: 'multipart/form-data'),
+      );
+
+      final statusCode = response.statusCode ?? 0;
+      final data = response.data;
+
+      if (statusCode >= 200 && statusCode < 300 && data is Map) {
+        onResponse(data);
+        return data;
+      }
+
+      onError(_extractApiErrorMessage(data, fallback: 'Upload failed'));
+    } on dio.DioException catch (e) {
+      final message = _extractApiErrorMessage(
+        e.response?.data,
+        fallback: e.message ?? 'Upload failed',
+      );
+      onError(message);
+    } catch (e) {
+      onError(e.toString());
+    }
+
+    return {};
+  }
+
+  Future<dynamic> submitProviderOnboarding({
+    required Map<String, dynamic> body,
+    required onResponse(dynamic data),
+    required onError(error),
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse(AppUrl.stripeProviderSubmit),
+        body: json.encode(body),
+        headers: {'Content-type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        onResponse(data is Map ? data : {'status': 'pending', 'raw': data});
+        return data;
+      }
+
+      final errorBody = _tryDecodeResponseBody(response.body);
+      onError(
+        _extractApiErrorMessage(
+          errorBody,
+          fallback: 'Unable to submit onboarding (${response.statusCode})',
+        ),
+      );
+    } catch (e) {
+      onError(e.toString());
+    }
+
+    return {};
+  }
+
+  Future<Map<String, dynamic>> uploadIdentityDocumentFuture({
+    required String userId,
+    required String documentType,
+    required String frontPath,
+    String? backPath,
+  }) async {
+    final completer = Completer<Map<String, dynamic>>();
+    await uploadIdentityDocument(
+      userId: userId,
+      documentType: documentType,
+      frontPath: frontPath,
+      backPath: backPath,
+      onResponse: (data) {
+        if (data is Map<String, dynamic>) {
+          completer.complete(data);
+        } else if (data is Map) {
+          completer.complete(Map<String, dynamic>.from(data));
+        } else {
+          completer.completeError('Invalid upload response');
+        }
+      },
+      onError: (error) => completer.completeError(error.toString()),
+    );
+    return completer.future;
+  }
+
+  Future<Map<String, dynamic>> submitProviderOnboardingFuture({
+    required Map<String, dynamic> body,
+  }) async {
+    final completer = Completer<Map<String, dynamic>>();
+    await submitProviderOnboarding(
+      body: body,
+      onResponse: (data) {
+        if (data is Map<String, dynamic>) {
+          completer.complete(data);
+        } else if (data is Map) {
+          completer.complete(Map<String, dynamic>.from(data));
+        } else {
+          completer.completeError('Invalid submit response');
+        }
+      },
+      onError: (error) => completer.completeError(error.toString()),
+    );
+    return completer.future;
+  }
+
+  Future<dynamic> submitProviderRequirements({
+    required Map<String, dynamic> body,
+    required onResponse(dynamic data),
+    required onError(error),
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse(AppUrl.stripeProviderSubmitRequirements),
+        body: json.encode(body),
+        headers: {'Content-type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        onResponse(data is Map ? data : {'status': 'pending', 'raw': data});
+        return data;
+      }
+
+      final errorBody = _tryDecodeResponseBody(response.body);
+      onError(
+        _extractApiErrorMessage(
+          errorBody,
+          fallback:
+              'Unable to submit required information (${response.statusCode})',
+        ),
+      );
+    } catch (e) {
+      onError(e.toString());
+    }
+
+    return {};
+  }
+
+  Future<Map<String, dynamic>> submitProviderRequirementsFuture({
+    required Map<String, dynamic> body,
+  }) async {
+    final completer = Completer<Map<String, dynamic>>();
+    await submitProviderRequirements(
+      body: body,
+      onResponse: (data) {
+        if (data is Map<String, dynamic>) {
+          completer.complete(data);
+        } else if (data is Map) {
+          completer.complete(Map<String, dynamic>.from(data));
+        } else {
+          completer.completeError('Invalid requirements submit response');
+        }
+      },
+      onError: (error) => completer.completeError(error.toString()),
+    );
+    return completer.future;
   }
 }
 

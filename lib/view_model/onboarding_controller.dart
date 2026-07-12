@@ -1,11 +1,14 @@
+import 'dart:convert';
+
 import 'package:get/get.dart';
 import 'package:jebby/Views/screens/onboarding/all_set.dart';
-import 'package:jebby/Views/screens/onboarding/before_you_continue.dart';
+import 'package:jebby/Views/screens/onboarding/bank_account_screen.dart';
+import 'package:jebby/Views/screens/onboarding/personal_details_screen.dart';
+import 'package:jebby/Views/screens/onboarding/review_submit_screen.dart';
 import 'package:jebby/Views/screens/onboarding/start_earning_intro.dart';
-import 'package:jebby/Views/screens/onboarding/stripe_identity_screen.dart';
-import 'package:jebby/Views/screens/onboarding/stripe_welcome.dart';
-import 'package:jebby/Views/screens/onboarding/what_youll_need.dart';
+import 'package:jebby/Views/screens/onboarding/verify_identity_screen.dart';
 import 'package:jebby/model/onboarding_state.dart';
+import 'package:jebby/model/provider_onboarding_data.dart';
 import 'package:jebby/respository/auth_repository.dart';
 import 'package:jebby/view_model/apiServices.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,8 +25,13 @@ class OnboardingController extends GetxController {
   static const String _keyStatus = 'onboarding_status';
   static const String _keyStripeAccountId = 'stripe_account_id';
   static const String _keyStripeComplete = 'stripe_onboarding_complete';
+  static const String _keyProviderData = 'provider_onboarding_data';
+  static const String _keyIntroSeen = 'onboarding_intro_seen';
 
   OnboardingState _state = const OnboardingState();
+  ProviderOnboardingData providerData = ProviderOnboardingData();
+  bool _introSeen = false;
+  bool get introSeen => _introSeen;
   bool isLoading = false;
   String userId = '';
   String userName = '';
@@ -52,6 +60,8 @@ class OnboardingController extends GetxController {
     update();
 
     await _loadFromLocalCache();
+    await _loadProviderData();
+    _prefillProviderDataFromProfile();
     await _reconcileWithServer();
     await _reconcileWithStripeStatus();
 
@@ -64,10 +74,10 @@ class OnboardingController extends GetxController {
     final role = prefs.getString('role') ?? '0';
     final identityVerified = prefs.getBool('identity_verified') ?? false;
 
-    final rawStep = prefs.getInt(_keyStep) ?? 1;
+    final rawStep = prefs.getInt(_keyStep) ?? OnboardingSteps.formStart;
     final rawStatus = prefs.getString(_keyStatus);
 
-    final migratedStep = _migrateLegacyStep(rawStep, rawStatus);
+    final migratedStep = _normalizeStoredStep(rawStep, rawStatus);
 
     _state = OnboardingState(
       onboardingStep: migratedStep,
@@ -79,18 +89,25 @@ class OnboardingController extends GetxController {
       stripeAccountId: prefs.getString(_keyStripeAccountId),
       stripeOnboardingComplete: prefs.getBool(_keyStripeComplete) ?? false,
     );
+    _introSeen = prefs.getBool(_keyIntroSeen) ?? false;
+    if (_state.onboardingStep >= OnboardingSteps.formStart &&
+        _state.onboardingStatus != OnboardingStatus.notStarted) {
+      _introSeen = true;
+    }
 
     if (migratedStep != rawStep) {
       await _persistLocal();
     }
   }
 
-  /// Older builds stored the intro as step 2 (drawer was step 1).
-  int _migrateLegacyStep(int step, String? status) {
-    if (status == OnboardingStatus.complete || step >= 10) return step;
-    if (status == OnboardingStatus.stripePending) return step;
-    if (step >= 2 && step <= 5) return step - 1;
-    return step;
+  int _normalizeStoredStep(int step, String? status) {
+    if (status == OnboardingStatus.complete || step >= OnboardingSteps.formEnd) {
+      return OnboardingSteps.formEnd;
+    }
+    if (status == OnboardingStatus.stripePending) {
+      return step < 8 ? 8 : OnboardingSteps.normalize(step);
+    }
+    return OnboardingSteps.normalize(step);
   }
 
   Future<void> _reconcileWithServer() async {
@@ -103,6 +120,12 @@ class OnboardingController extends GetxController {
           if (data is Map<String, dynamic> && data.isNotEmpty) {
             final serverState = OnboardingState.fromJson(data);
             _state = _mergeStates(_state, serverState);
+            _state = _state.copyWith(
+              onboardingStep: _normalizeStoredStep(
+                _state.onboardingStep,
+                _state.onboardingStatus,
+              ),
+            );
             _persistLocal();
           }
         },
@@ -142,7 +165,7 @@ class OnboardingController extends GetxController {
           } else if (_state.onboardingStatus == OnboardingStatus.stripePending) {
             _state = _state.copyWith(
               onboardingStep:
-                  _state.onboardingStep < 5 ? 5 : _state.onboardingStep,
+                  _state.onboardingStep < 8 ? 8 : _state.onboardingStep,
             );
             _persistLocal();
           }
@@ -185,12 +208,79 @@ class OnboardingController extends GetxController {
 
   Future<void> markStripePending({String? accountId}) async {
     _state = _state.copyWith(
-      onboardingStep: 5, // Stripe Connect welcome / hosted flow
+      onboardingStep: 8,
       onboardingStatus: OnboardingStatus.stripePending,
       stripeAccountId: accountId ?? _state.stripeAccountId,
     );
     await _persistLocal();
     _syncToServer();
+    update();
+  }
+
+  Future<void> updateProviderData(ProviderOnboardingData data) async {
+    providerData = data;
+    await _persistProviderData();
+    update();
+  }
+
+  Future<void> _loadProviderData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_keyProviderData);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final map = jsonDecode(raw);
+      if (map is Map<String, dynamic>) {
+        final previousSsn = providerData.ssnLast4;
+        providerData = ProviderOnboardingData.fromPersistedJson(map);
+        final loadedSsn = providerData.ssnLast4;
+        if ((loadedSsn == null || loadedSsn.isEmpty) &&
+            previousSsn != null &&
+            previousSsn.isNotEmpty) {
+          providerData.ssnLast4 = previousSsn;
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistProviderData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _keyProviderData,
+      jsonEncode(providerData.toPersistedJson()),
+    );
+  }
+
+  void _prefillProviderDataFromProfile() {
+    if (providerData.firstName.isEmpty && userName.isNotEmpty) {
+      final parts = userName.trim().split(RegExp(r'\s+'));
+      providerData.firstName = parts.first;
+      if (parts.length > 1) {
+        providerData.lastName = parts.sublist(1).join(' ');
+      }
+    }
+    if (providerData.email.isEmpty && userEmail.isNotEmpty) {
+      providerData.email = userEmail;
+    }
+    if (providerData.phone.isEmpty && userPhone.isNotEmpty) {
+      providerData.phone = userPhone;
+    }
+    if (providerData.accountHolderName.isEmpty &&
+        providerData.legalFullName.isNotEmpty) {
+      providerData.accountHolderName = providerData.legalFullName;
+    }
+  }
+
+  Future<void> clearSensitiveProviderData() async {
+    providerData.clearSensitiveFields();
+    await _persistProviderData();
+    update();
+  }
+
+  Future<void> clearProviderDraft() async {
+    providerData = ProviderOnboardingData();
+    _prefillProviderDataFromProfile();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyProviderData);
     update();
   }
 
@@ -227,32 +317,36 @@ class OnboardingController extends GetxController {
     await markComplete();
   }
 
+  Future<void> markIntroSeen() async {
+    _introSeen = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyIntroSeen, true);
+    update();
+  }
+
+  void navigateToIntroFlow() {
+    Get.to(() => const StartEarningIntroScreen());
+  }
+
   void navigateToStep(int step) {
-    switch (step) {
-      case 1:
-        Get.to(() => const StartEarningIntroScreen());
+    switch (OnboardingSteps.normalize(step)) {
+      case 6:
+        Get.to(() => const PersonalDetailsScreen());
         break;
-      case 2:
-        Get.to(() => const WhatYoullNeedScreen());
+      case 7:
+        Get.to(() => const VerifyIdentityScreen());
         break;
-      case 3:
-        Get.to(() => const StripeIdentityScreen());
+      case 8:
+        Get.to(() => const BankAccountScreen());
         break;
-      case 4:
-        Get.to(() => const BeforeYouContinueScreen());
-        break;
-      case 5:
-        Get.to(() => const StripeWelcomeScreen());
+      case 9:
+        Get.to(() => const ReviewSubmitScreen());
         break;
       case 10:
         Get.to(() => const AllSetScreen());
         break;
       default:
-        if (step >= 5 && step < 10) {
-          Get.to(() => const StripeWelcomeScreen());
-        } else {
-          Get.to(() => const StartEarningIntroScreen());
-        }
+        Get.to(() => const PersonalDetailsScreen());
     }
   }
 
@@ -260,22 +354,22 @@ class OnboardingController extends GetxController {
     if (_state.isComplete) return;
 
     if (_state.onboardingStatus == OnboardingStatus.notStarted) {
-      await advanceTo(1);
-      navigateToStep(1);
+      if (!_introSeen) {
+        navigateToIntroFlow();
+        return;
+      }
+      await advanceTo(OnboardingSteps.formStart);
+      navigateToStep(OnboardingSteps.formStart);
       return;
     }
 
-    final resumeStep = _state.resumeStep;
-    if (!await isStripeIdentityVerified() && resumeStep >= 4) {
-      navigateToStep(3);
-      return;
-    }
-    navigateToStep(resumeStep);
+    navigateToStep(_state.resumeStep);
   }
 
   Future<void> resumeFromStep(int step) async {
-    await advanceTo(step);
-    navigateToStep(step);
+    final normalized = OnboardingSteps.normalize(step);
+    await advanceTo(normalized);
+    navigateToStep(normalized);
   }
 
   Future<bool> isStripeIdentityVerified() async {
@@ -301,17 +395,7 @@ class OnboardingController extends GetxController {
   String _sanitizePhone(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty || trimmed == 'null') return '';
-    return _toE164(trimmed);
-  }
-
-  /// Stripe requires E.164 format (e.g. +14155552671).
-  String _toE164(String phone) {
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
-    if (digits.isEmpty) return '';
-    if (phone.startsWith('+')) return '+$digits';
-    if (digits.length == 10) return '+1$digits';
-    if (digits.length == 11 && digits.startsWith('1')) return '+$digits';
-    return '+$digits';
+    return ProviderOnboardingData.formatPhoneE164(trimmed);
   }
 
   void _syncToServer() {

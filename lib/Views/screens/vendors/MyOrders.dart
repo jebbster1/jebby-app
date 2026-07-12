@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/Views/screens/vendors/OrderDetail.dart';
+import 'package:jebby/Views/screens/vendors/vendorhome.dart';
 import 'package:provider/provider.dart';
 
 import '../../../Services/provider/sign_in_provider.dart';
@@ -31,6 +32,12 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
 
   /// 0 = New (status 0), 1 = Pending (status 1), 2 = Completed (status 2)
   int selectedTab = 0;
+
+  EdgeInsets _listBottomPadding(BuildContext context) {
+    return EdgeInsets.only(
+      bottom: MediaQuery.of(context).padding.bottom + 24,
+    );
+  }
 
   bool isLoading = true;
   bool isError = false;
@@ -388,7 +395,7 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
       );
     }
     return ListView.separated(
-      padding: EdgeInsets.zero,
+      padding: _listBottomPadding(context),
       physics: const BouncingScrollPhysics(),
       itemCount: newOrders.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -420,7 +427,7 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
       );
     }
     return ListView.separated(
-      padding: EdgeInsets.zero,
+      padding: _listBottomPadding(context),
       physics: const BouncingScrollPhysics(),
       itemCount: list.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -528,7 +535,7 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
       );
     }
     return ListView.separated(
-      padding: EdgeInsets.zero,
+      padding: _listBottomPadding(context),
       physics: const BouncingScrollPhysics(),
       itemCount: list.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -662,7 +669,13 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
           foregroundColor: Colors.black,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-            onPressed: () => Get.back(),
+            onPressed: () {
+              if (Navigator.of(context).canPop()) {
+                Get.back();
+              } else {
+                Get.offAll(() => const VendrosHomeScreen());
+              }
+            },
             style: IconButton.styleFrom(foregroundColor: Colors.black),
           ),
         ),

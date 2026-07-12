@@ -181,8 +181,8 @@ class _SearchDataState extends State<SearchData> {
     final price = item.price;
     final priceStr =
         price != null
-            ? '\$ ${price.toDouble().toStringAsFixed(2)}'
-            : '\$ —';
+            ? '\$${price.toDouble().toStringAsFixed(2)}'
+            : '\$—';
     final stars = double.tryParse(item.stars?.toString() ?? '0') ?? 0.0;
     final int filledStars = stars.round().clamp(0, 5);
 

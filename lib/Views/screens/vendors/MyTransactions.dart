@@ -4,7 +4,9 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/view_model/apiServices.dart';
-import 'package:jebby/Views/screens/auth/stripe_onboarding.dart';
+import 'package:jebby/view_model/onboarding_controller.dart';
+import 'package:jebby/Views/screens/onboarding/review_submit_screen.dart';
+import 'package:jebby/Views/screens/vendors/stripe_requirements_modal.dart';
 import 'package:provider/provider.dart';
 
 import '../../../Services/provider/sign_in_provider.dart';
@@ -28,7 +30,9 @@ class _TransactionListScreenState extends State<TransactionListScreen>
   bool isEmpty = false;
   bool isAccountLoading = false;
   String? accountStatus;
+  String? accountMessage;
   Map<String, dynamic>? accountDetails;
+  bool _requirementsModalShown = false;
 
   getNewOrders() {
     ApiRepository.shared.getVenodorOrders(
@@ -91,13 +95,384 @@ class _TransactionListScreenState extends State<TransactionListScreen>
         });
   }
 
+  void _applyStripeStatusResponse(Map<String, dynamic> data) {
+    final rawStatus = data['status']?.toString().trim();
+    accountStatus = (rawStatus == null || rawStatus.isEmpty) ? null : rawStatus;
+    accountMessage = data['message']?.toString();
+
+    Map<String, dynamic> account = {};
+    if (data['account'] is Map) {
+      account = Map<String, dynamic>.from(data['account'] as Map);
+    } else {
+      if (data['account_id'] != null) account['id'] = data['account_id'];
+      if (data['charges_enabled'] != null) {
+        account['charges_enabled'] = data['charges_enabled'];
+      }
+      if (data['payouts_enabled'] != null) {
+        account['payouts_enabled'] = data['payouts_enabled'];
+      }
+      if (data['details_submitted'] != null) {
+        account['details_submitted'] = data['details_submitted'];
+      }
+      if (data['type'] != null) account['type'] = data['type'];
+      if (data['balance'] != null) account['balance'] = data['balance'];
+    }
+
+    if (data['requirements'] is Map) {
+      account['requirements'] = data['requirements'];
+    } else if (account['requirements'] == null &&
+        data['account'] is Map &&
+        (data['account'] as Map)['requirements'] is Map) {
+      account['requirements'] = (data['account'] as Map)['requirements'];
+    }
+
+    accountDetails = account.isEmpty ? null : account;
+  }
+
+  Future<void> _prepareOnboardingController() async {
+    final controller = ensureOnboardingController();
+    if (controller.userId.isEmpty && sourceId.isNotEmpty) {
+      await controller.loadAndReconcile(
+        userId: sourceId,
+        name: fullname,
+        email: email,
+      );
+    }
+  }
+
+  Future<void> _showRequirementsModal() async {
+    if (!_hasActionableRequirements() || _isPendingStripeReview()) return;
+
+    final requirements = _accountRequirements;
+    if (requirements == null) return;
+
+    await _prepareOnboardingController();
+    if (!mounted) return;
+
+    await StripeRequirementsModal.show(
+      context,
+      userId: sourceId,
+      requirements: requirements,
+      message: accountMessage,
+      onSubmitted: checkStripeAccountStatus,
+    );
+  }
+
+  void _maybeAutoShowRequirementsModal() {
+    if (_requirementsModalShown || !mounted || isAccountLoading) return;
+    if (!_hasActionableRequirements() || _isPendingStripeReview()) return;
+
+    _requirementsModalShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showRequirementsModal();
+    });
+  }
+
+  Future<void> _openProviderOnboarding({bool openReview = false}) async {
+    final controller = ensureOnboardingController();
+    await _prepareOnboardingController();
+
+    if (openReview ||
+        accountStatus == 'requires_info' ||
+        controller.state.isComplete) {
+      Get.to(() => const ReviewSubmitScreen());
+      return;
+    }
+
+    await controller.startOrResume();
+  }
+
+  String _accountStatusHeadline(String status) {
+    switch (status) {
+      case 'active':
+        return 'Account active';
+      case 'pending':
+        return 'Account pending';
+      case 'requires_info':
+        return 'Action required';
+      case 'not_started':
+        return 'Account not set up';
+      case 'failed':
+      case 'failure':
+        return 'Setup failed';
+      case 'error':
+        return 'Could not load account';
+      default:
+        return 'Account status';
+    }
+  }
+
+  Color _accountStatusColor(String status) {
+    switch (status) {
+      case 'active':
+        return Colors.green.shade700;
+      case 'pending':
+        return Colors.blue.shade700;
+      case 'requires_info':
+        return Colors.orange.shade800;
+      case 'failed':
+      case 'failure':
+      case 'error':
+        return Colors.red.shade700;
+      default:
+        return _subtitleGrey;
+    }
+  }
+
+  IconData _accountStatusIcon(String status) {
+    switch (status) {
+      case 'active':
+        return Icons.check_circle;
+      case 'pending':
+        return Icons.pending_actions;
+      case 'requires_info':
+        return Icons.info_outline;
+      case 'failed':
+      case 'failure':
+      case 'error':
+        return Icons.error_outline;
+      case 'not_started':
+        return Icons.warning_amber_rounded;
+      default:
+        return Icons.account_balance_outlined;
+    }
+  }
+
+  String _accountStatusDescription(String status) {
+    switch (status) {
+      case 'active':
+        return 'Your Stripe payout account is active and ready to receive payments.';
+      case 'pending':
+        return 'Your account is being reviewed. This usually takes 1–2 business days.';
+      case 'requires_info':
+        return accountMessage ??
+            'Stripe needs additional information to finish verifying your account.';
+      case 'not_started':
+        return 'Set up your payout account to receive payments from rentals.';
+      case 'failed':
+      case 'failure':
+        return accountMessage ??
+            'There was an issue with your account setup. Please try again.';
+      case 'error':
+        return accountMessage ??
+            'We could not load your Stripe account status. Pull to refresh or try again.';
+      default:
+        return accountMessage ??
+            'Your Stripe Connect account status is $status.';
+    }
+  }
+
+  String _accountTypeLabel() {
+    final type = accountDetails?['type']?.toString().toLowerCase() ?? '';
+    if (type == 'custom') return 'Custom';
+    if (type == 'express') return 'Express';
+    if (type == 'standard') return 'Standard';
+    return 'Connect';
+  }
+
+  bool _requirementListHasItems(dynamic value) {
+    return value is List && value.isNotEmpty;
+  }
+
+  Map<String, dynamic>? get _accountRequirements {
+    final requirements = accountDetails?['requirements'];
+    return requirements is Map ? Map<String, dynamic>.from(requirements) : null;
+  }
+
+  bool _hasActionableRequirements() {
+    final requirements = _accountRequirements;
+    if (requirements == null) return false;
+
+    if (_requirementListHasItems(requirements['currently_due']) ||
+        _requirementListHasItems(requirements['past_due'])) {
+      return true;
+    }
+
+    return requirements['disabled_reason'] != null;
+  }
+
+  bool _hasRequirementsToDisplay() {
+    final requirements = _accountRequirements;
+    if (requirements == null) return false;
+
+    for (final key in [
+      'currently_due',
+      'past_due',
+      'eventually_due',
+      'pending_verification',
+    ]) {
+      if (_requirementListHasItems(requirements[key])) return true;
+    }
+
+    return requirements['disabled_reason'] != null;
+  }
+
+  bool _isPendingStripeReview() {
+    if (accountStatus == 'pending') return true;
+
+    final requirements = _accountRequirements;
+    if (requirements == null) return false;
+
+    return _requirementListHasItems(requirements['pending_verification']) &&
+        !_hasActionableRequirements();
+  }
+
+  bool _hasOutstandingRequirements() => _hasActionableRequirements();
+
+  Widget _buildAccountSummaryDetails() {
+    if (accountDetails == null) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (accountDetails!['id'] != null) ...[
+          Text(
+            'Account ID: ${accountDetails!['id']}',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontFamily: 'monospace',
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+        if (accountDetails!['charges_enabled'] != null) ...[
+          Text(
+            'Charges enabled: ${accountDetails!['charges_enabled'] == true ? 'Yes' : 'No'}',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 4),
+        ],
+        if (accountDetails!['payouts_enabled'] != null)
+          Text(
+            'Payouts enabled: ${accountDetails!['payouts_enabled'] == true ? 'Yes' : 'No'}',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+        if (_hasRequirementsToDisplay()) ...[
+          const SizedBox(height: 12),
+          Text(
+            _isPendingStripeReview()
+                ? 'Verification in progress'
+                : 'Outstanding requirements',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: _subtitleGrey,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildRequirementsSection(accountDetails!['requirements']),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildAccountActionButton({
+    required String label,
+    required VoidCallback onPressed,
+    required Color backgroundColor,
+  }) {
+    return FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: backgroundColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  Widget _buildResolvedAccountStatus(String status) {
+    final color = _accountStatusColor(status);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(_accountStatusIcon(status), color: color, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _accountStatusHeadline(status),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _accountStatusDescription(status),
+          style: GoogleFonts.inter(fontSize: 14, color: _subtitleGrey),
+        ),
+        if (accountDetails != null) ...[
+          const SizedBox(height: 8),
+          _buildAccountSummaryDetails(),
+        ],
+        const SizedBox(height: 16),
+        if (_hasOutstandingRequirements())
+          _buildAccountActionButton(
+            label: 'Submit required info',
+            backgroundColor: AppColors.primaryColor,
+            onPressed: _showRequirementsModal,
+          )
+        else if (status == 'active')
+          _buildAccountActionButton(
+            label: 'View account details',
+            backgroundColor: const Color(0xFF2E7D32),
+            onPressed: _showAccountDetailsModal,
+          )
+        else if (status == 'not_started')
+          _buildAccountActionButton(
+            label: 'Set up account',
+            backgroundColor: AppColors.primaryColor,
+            onPressed: () => _openProviderOnboarding(),
+          )
+        else if (status == 'pending')
+          _buildAccountActionButton(
+            label: 'View setup progress',
+            backgroundColor: const Color(0xFF1E88E5),
+            onPressed: _showAccountDetailsModal,
+          )
+        else if (status == 'failed' ||
+            status == 'failure' ||
+            status == 'error')
+          _buildAccountActionButton(
+            label: status == 'error' ? 'Retry' : 'Try again',
+            backgroundColor: const Color(0xFFC62828),
+            onPressed:
+                status == 'error'
+                    ? checkStripeAccountStatus
+                    : () => _openProviderOnboarding(openReview: true),
+          )
+        else
+          _buildAccountActionButton(
+            label: 'Manage account',
+            backgroundColor: AppColors.primaryColor,
+            onPressed: _showAccountDetailsModal,
+          ),
+      ],
+    );
+  }
+
   void checkStripeAccountStatus() {
     if (sourceId.isEmpty) {
-      return; // Don't check if sourceId is not available yet
+      return;
     }
 
     setState(() {
       isAccountLoading = true;
+      accountMessage = null;
     });
 
     ApiRepository.shared.checkStripeAccountStatus(
@@ -106,9 +481,16 @@ class _TransactionListScreenState extends State<TransactionListScreen>
         if (this.mounted) {
           setState(() {
             isAccountLoading = false;
-            accountStatus = data['status'];
-            accountDetails = data['account'];
+            if (data is Map<String, dynamic>) {
+              _applyStripeStatusResponse(data);
+            } else if (data is Map) {
+              _applyStripeStatusResponse(Map<String, dynamic>.from(data));
+            } else {
+              accountStatus = 'error';
+              accountDetails = null;
+            }
           });
+          _maybeAutoShowRequirementsModal();
         }
       },
       (error) {
@@ -116,6 +498,8 @@ class _TransactionListScreenState extends State<TransactionListScreen>
           setState(() {
             isAccountLoading = false;
             accountStatus = 'error';
+            accountMessage = error?.toString();
+            accountDetails = null;
           });
         }
       },
@@ -179,119 +563,144 @@ class _TransactionListScreenState extends State<TransactionListScreen>
             style: IconButton.styleFrom(foregroundColor: Colors.black),
           ),
         ),
-        body: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'My Transactions',
-                style: GoogleFonts.inter(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black,
+        body: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'My Transactions',
+                      style: GoogleFonts.inter(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'View payout history and manage your Stripe payout account.',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: _subtitleGrey,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    accountSection(),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Recent activity',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                'View payout history and manage your Stripe Express account.',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                  color: _subtitleGrey,
-                ),
-              ),
-              const SizedBox(height: 20),
-              accountSection(),
-              const SizedBox(height: 20),
-              Text(
-                'Recent activity',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Expanded(child: _buildTransactionBody()),
-            ],
-          ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              sliver: _buildTransactionSliver(),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildTransactionBody() {
+  Widget _buildTransactionSliver() {
     if (isError) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 56, color: Colors.red.shade300),
-            const SizedBox(height: 16),
-            Text(
-              'Could not load transactions.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 15, color: _subtitleGrey),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () {
-                setState(() {
-                  isLoading = true;
-                  isError = false;
-                  isEmpty = false;
-                });
-                getNewOrders();
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primaryColor,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+      return SliverToBoxAdapter(
+        child: SizedBox(
+          height: 220,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 56, color: Colors.red.shade300),
+                const SizedBox(height: 16),
+                Text(
+                  'Could not load transactions.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(fontSize: 15, color: _subtitleGrey),
                 ),
-              ),
-              child: Text(
-                'Retry',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-              ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () {
+                    setState(() {
+                      isLoading = true;
+                      isError = false;
+                      isEmpty = false;
+                    });
+                    getNewOrders();
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primaryColor,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    'Retry',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       );
     }
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primaryColor),
+      return const SliverToBoxAdapter(
+        child: SizedBox(
+          height: 180,
+          child: Center(
+            child: CircularProgressIndicator(color: AppColors.primaryColor),
+          ),
+        ),
       );
     }
     if (isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.receipt_long_outlined,
-              size: 56,
-              color: Colors.grey.shade400,
+      return SliverToBoxAdapter(
+        child: SizedBox(
+          height: 220,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.receipt_long_outlined,
+                  size: 56,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No transactions yet',
+                  style: GoogleFonts.inter(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: _subtitleGrey,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Your transaction history will appear here.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(fontSize: 14, color: _subtitleGrey),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              'No transactions yet',
-              style: GoogleFonts.inter(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                color: _subtitleGrey,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Your transaction history will appear here.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 14, color: _subtitleGrey),
-            ),
-          ],
+          ),
         ),
       );
     }
@@ -300,16 +709,20 @@ class _TransactionListScreenState extends State<TransactionListScreen>
     final visible = raw.where((e) => e.cancelDate.toString().isEmpty).toList();
 
     if (visible.isEmpty) {
-      return Center(
-        child: Text(
-          'No active transactions',
-          style: GoogleFonts.inter(fontSize: 15, color: _subtitleGrey),
+      return SliverToBoxAdapter(
+        child: SizedBox(
+          height: 120,
+          child: Center(
+            child: Text(
+              'No active transactions',
+              style: GoogleFonts.inter(fontSize: 15, color: _subtitleGrey),
+            ),
+          ),
         ),
       );
     }
 
-    return ListView.separated(
-      physics: const BouncingScrollPhysics(),
+    return SliverList.separated(
       itemCount: visible.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
@@ -417,7 +830,7 @@ class _TransactionListScreenState extends State<TransactionListScreen>
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Stripe Express account',
+                    'Stripe payout account',
                     style: GoogleFonts.inter(
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
@@ -448,249 +861,9 @@ class _TransactionListScreenState extends State<TransactionListScreen>
                 ),
               )
             else if (accountStatus == 'not_started' || accountStatus == null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        color: Colors.orange,
-                        size: 20,
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        'Account Not Set Up',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.orange[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Set up your Stripe Express account to receive payments and manage your business.',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: _subtitleGrey,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () {
-                      Get.to(
-                        () => StripeOnboardingScreen(
-                          userId: sourceId,
-                          isFromTransactions: true,
-                        ),
-                      );
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primaryColor,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 14,
-                        horizontal: 24,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: Text(
-                      'Set up account',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            else if (accountStatus == 'pending')
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.pending_actions, color: Colors.blue, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Account Pending',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Your account is being reviewed. This usually takes 1-2 business days.',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: _subtitleGrey,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () {
-                      Get.to(
-                        () => StripeOnboardingScreen(
-                          userId: sourceId,
-                          isFromTransactions: true,
-                        ),
-                      );
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E88E5),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 14,
-                        horizontal: 24,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: Text(
-                      'Complete setup',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            else if (accountStatus == 'active')
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.check_circle, color: Colors.green, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Account Active',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.green[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 8),
-                  if (accountDetails != null) ...[
-                    Text(
-                      'Account ID: ${accountDetails!['id']}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Charges Enabled: ${accountDetails!['charges_enabled'] ? 'Yes' : 'No'}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Payouts Enabled: ${accountDetails!['payouts_enabled'] ? 'Yes' : 'No'}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () {
-                      _showAccountDetailsModal();
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF2E7D32),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 14,
-                        horizontal: 24,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: Text(
-                      'Manage account',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            else if (accountStatus == 'failed')
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.error_outline, color: Colors.red, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Account Setup Failed',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.red[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'There was an issue with your account setup. Please try again.',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: _subtitleGrey,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () {
-                      Get.to(
-                        () => StripeOnboardingScreen(
-                          userId: sourceId,
-                          isFromTransactions: true,
-                        ),
-                      );
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFC62828),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 14,
-                        horizontal: 24,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: Text(
-                      'Try again',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              _buildResolvedAccountStatus('not_started')
+            else
+              _buildResolvedAccountStatus(accountStatus!),
           ],
         ),
       ),
@@ -699,6 +872,14 @@ class _TransactionListScreenState extends State<TransactionListScreen>
 
   void _showAccountDetailsModal() {
     final maxH = MediaQuery.of(context).size.height * 0.78;
+    final status = accountStatus ?? 'unknown';
+    final statusLabel = _accountStatusHeadline(status);
+    final statusGood = status == 'active';
+    final statusBad =
+        status == 'failed' ||
+        status == 'failure' ||
+        status == 'error' ||
+        status == 'requires_info';
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.45),
@@ -784,9 +965,10 @@ class _TransactionListScreenState extends State<TransactionListScreen>
                             const SizedBox(height: 10),
                             _buildDetailRow(
                               'Account status',
-                              'Active',
+                              statusLabel,
                               Icons.verified_outlined,
-                              valueGood: true,
+                              valueGood: statusGood,
+                              valueBad: statusBad,
                             ),
                             const SizedBox(height: 10),
                             if (accountDetails != null) ...[
@@ -843,7 +1025,7 @@ class _TransactionListScreenState extends State<TransactionListScreen>
                             ],
                             _buildDetailRow(
                               'Account type',
-                              'Express',
+                              _accountTypeLabel(),
                               Icons.storefront_outlined,
                             ),
                           ],
@@ -954,6 +1136,14 @@ class _TransactionListScreenState extends State<TransactionListScreen>
     if (requirements['past_due'] != null) {
       requirementWidgets.add(
         _buildRequirementItem('Past Due', requirements['past_due']),
+      );
+    }
+    if (requirements['pending_verification'] != null) {
+      requirementWidgets.add(
+        _buildRequirementItem(
+          'Pending verification',
+          requirements['pending_verification'],
+        ),
       );
     }
     if (requirements['disabled_reason'] != null) {

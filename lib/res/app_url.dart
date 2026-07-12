@@ -26,7 +26,6 @@ class AppUrl {
 
   static var editProfileUrl = baseUrlM + "/UserProfileInsert";
   static var deleteAccount = baseUrlM + "/VendorDelete";
-  static var stripeVerificationStatus = baseUrlM + "/stripe/verification-status/";
 
   ///GET Apis
   static var UserProfileGetByIdUrl = baseUrlM + "/UserProfileGetById/:id";
@@ -41,6 +40,7 @@ class AppUrl {
   static var getRelatedProduct = baseUrlM + "/getRelatedProductsByProductId/";
   static var deleteProduct = baseUrlM + "/deleteProduct";
   static var productDeleteImage = baseUrlM + "/productDeleteImage";
+  static var productUpdateImage = baseUrlM + "/productUpdateImage";
   static var productUpdate = baseUrlM + "/productUpdate";
   static var categoryID = baseUrlM + "/categoryGetById/";
   static var subCategoryID = baseUrlM + "/subCategoryGetById/";
@@ -83,4 +83,11 @@ class AppUrl {
 
   static var onboardingStateGet = baseUrlM + '/onboarding-state/';
   static var onboardingStateUpdate = baseUrlM + '/onboarding-state';
+
+  static var stripeProviderUploadDocument =
+      baseUrlM + '/stripe/provider/upload-document';
+  static var stripeProviderSubmit = baseUrlM + '/stripe/provider/submit';
+  static var stripeProviderSubmitRequirements =
+      baseUrlM + '/stripe/provider/submit-requirements';
+  static var stripeAccountStatus = baseUrlM + '/stripe/account-status/';
 }

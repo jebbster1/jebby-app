@@ -430,7 +430,7 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
                                         ),
                                       ),
                                       Text(
-                                        '€ $price',
+                                        '\$$price',
                                         style: GoogleFonts.inter(
                                           fontSize: 20,
                                           fontWeight: FontWeight.w700,

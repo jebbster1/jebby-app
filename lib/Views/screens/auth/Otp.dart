@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:jebby/Services/provider/sign_in_provider.dart';
 import 'package:jebby/Views/helper/colors.dart';
@@ -42,13 +43,40 @@ class OTPSCREEN extends StatefulWidget {
 class _OTPSCREENState extends State<OTPSCREEN> {
   OtpFieldController otpController = OtpFieldController();
   TextEditingController _otpController = TextEditingController();
+  final TextEditingController _emailAutofillController = TextEditingController();
   String? OtpValue;
   bool _isLoading = false;
 
   @override
   void dispose() {
     _otpController.dispose();
+    _emailAutofillController.dispose();
     super.dispose();
+  }
+
+  void _syncEmailOtpFromAutofill(String value) {
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) {
+      otpController.clear();
+      OtpValue = null;
+      return;
+    }
+
+    final code = digits.length > 4 ? digits.substring(0, 4) : digits;
+    final chars = code.split('');
+    while (chars.length < 4) {
+      chars.add('');
+    }
+
+    otpController.set(chars);
+    OtpValue = code.length == 4 ? code : null;
+
+    if (_emailAutofillController.text != code) {
+      _emailAutofillController.value = TextEditingValue(
+        text: code,
+        selection: TextSelection.collapsed(offset: code.length),
+      );
+    }
   }
 
   @override
@@ -119,45 +147,86 @@ class _OTPSCREENState extends State<OTPSCREEN> {
               ),
               SizedBox(height: res_height * 0.05),
               if (!widget.fromPhoneAuth)
-                Theme(
-                  data: Theme.of(context).copyWith(
-                    textSelectionTheme: TextSelectionThemeData(
-                      cursorColor: AppColors.primaryColor,
-                      selectionColor: AppColors.primaryColor.withOpacity(0.3),
-                    ),
-                  ),
-                  child: OTPTextField(
-                    controller: otpController,
-                    length: 4,
-                    width: res_width,
-                    textFieldAlignment: MainAxisAlignment.spaceEvenly,
-                    fieldWidth: 56,
-                    fieldStyle: FieldStyle.box,
-                    otpFieldStyle: OtpFieldStyle(
-                      backgroundColor: Colors.white,
-                      borderColor: Colors.grey.shade300,
-                      enabledBorderColor: Colors.grey.shade300,
-                      focusBorderColor: AppColors.primaryColor,
-                    ),
-                    outlineBorderRadius: 12,
-                    style: GoogleFonts.inter(
-                      fontSize: 24,
-                      color: Colors.black,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    onChanged: (pin) {},
-                    onCompleted: (pin) {
-                      OtpValue = pin;
-                    },
+                AutofillGroup(
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      IgnorePointer(
+                        child: Theme(
+                          data: Theme.of(context).copyWith(
+                            textSelectionTheme: TextSelectionThemeData(
+                              cursorColor: AppColors.primaryColor,
+                              selectionColor:
+                                  AppColors.primaryColor.withOpacity(0.3),
+                            ),
+                          ),
+                          child: OTPTextField(
+                            controller: otpController,
+                            length: 4,
+                            width: res_width,
+                            textFieldAlignment: MainAxisAlignment.spaceEvenly,
+                            fieldWidth: 56,
+                            fieldStyle: FieldStyle.box,
+                            otpFieldStyle: OtpFieldStyle(
+                              backgroundColor: Colors.white,
+                              borderColor: Colors.grey.shade300,
+                              enabledBorderColor: Colors.grey.shade300,
+                              focusBorderColor: AppColors.primaryColor,
+                            ),
+                            outlineBorderRadius: 12,
+                            style: GoogleFonts.inter(
+                              fontSize: 24,
+                              color: Colors.black,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            onChanged: (pin) {},
+                            onCompleted: (pin) {
+                              OtpValue = pin;
+                            },
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: res_width,
+                        height: 56,
+                        child: TextField(
+                          controller: _emailAutofillController,
+                          autofillHints: const [AutofillHints.oneTimeCode],
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          maxLength: 4,
+                          showCursor: false,
+                          enableSuggestions: true,
+                          autocorrect: false,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          style: const TextStyle(
+                            color: Colors.transparent,
+                            fontSize: 1,
+                            height: 1,
+                          ),
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            counterText: '',
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          onChanged: _syncEmailOtpFromAutofill,
+                        ),
+                      ),
+                    ],
                   ),
                 )
               else
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24),
-                  child: TextField(
-                    controller: _otpController,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
+                AutofillGroup(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24),
+                    child: TextField(
+                      controller: _otpController,
+                      autofillHints: const [AutofillHints.oneTimeCode],
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      maxLength: 6,
                     style: GoogleFonts.inter(
                       color: Colors.black87,
                       fontWeight: FontWeight.w600,
@@ -187,6 +256,7 @@ class _OTPSCREENState extends State<OTPSCREEN> {
                     ),
                   ),
                 ),
+              ),
               SizedBox(height: res_height * 0.04),
               InkWell(
                 onTap: () async {

@@ -358,60 +358,60 @@ class _EditProfileState extends State<EditProfile> {
                 child: Column(
                   children: [
                     SizedBox(height: res_height * 0.01),
-                    InkWell(
-                      onTap: () {
-                        getGalleryImage();
-                      },
+                    SizedBox(
+                      height: 222,
+                      width: double.infinity,
                       child: Stack(
                         clipBehavior: Clip.none,
                         alignment: Alignment.topCenter,
                         children: [
-                          Container(
-                            width: double.infinity,
-                            height: 170,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(24),
+                          GestureDetector(
+                            onTap: getGalleryImage,
+                            child: Container(
+                              width: double.infinity,
+                              height: 170,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              child:
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: _image != null
+                                        ? Image.file(
+                                            _image!.absolute,
+                                            fit: BoxFit.cover,
+                                          )
+                                        : (back_image_api.toString().trim().isEmpty ||
+                                                back_image_api.toString() == "null")
+                                            ? Image.asset(
+                                                "assets/slicing/placeholder.png",
+                                                fit: BoxFit.cover,
+                                              )
+                                            : Image.network(
+                                                Url + back_image_api,
+                                                fit: BoxFit.cover,
+                                                loadingBuilder: (context, child, loadingProgress) {
+                                                  if (loadingProgress == null) return child;
+                                                  return Image.asset(
+                                                    "assets/slicing/placeholder.png",
+                                                    fit: BoxFit.cover,
+                                                  );
+                                                },
+                                                errorBuilder: (context, error, stackTrace) {
+                                                  return Image.asset(
+                                                    "assets/slicing/placeholder.png",
+                                                    fit: BoxFit.cover,
+                                                  );
+                                                },
+                                              ),
+                                  ),
                             ),
-                            child:
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(24),
-                                  child: _image != null
-                                      ? Image.file(
-                                          _image!.absolute,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : (back_image_api.toString().trim().isEmpty ||
-                                              back_image_api.toString() == "null")
-                                          ? Image.asset(
-                                              "assets/slicing/placeholder.png",
-                                              fit: BoxFit.cover,
-                                            )
-                                          : Image.network(
-                                              Url + back_image_api,
-                                              fit: BoxFit.cover,
-                                              loadingBuilder: (context, child, loadingProgress) {
-                                                if (loadingProgress == null) return child;
-                                                return Image.asset(
-                                                  "assets/slicing/placeholder.png",
-                                                  fit: BoxFit.cover,
-                                                );
-                                              },
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return Image.asset(
-                                                  "assets/slicing/placeholder.png",
-                                                  fit: BoxFit.cover,
-                                                );
-                                              },
-                                            ),
-                                ),
                           ),
                           Positioned(
+                            top: 118,
                             right: 14,
-                            bottom: 18,
                             child: GestureDetector(
-                              onTap: () {
-                                getGalleryImage();
-                              },
+                              onTap: getGalleryImage,
                               child: Container(
                                 height: 34,
                                 width: 34,
@@ -428,62 +428,61 @@ class _EditProfileState extends State<EditProfile> {
                             ),
                           ),
                           Positioned(
-                            bottom: -52,
-                            child: GestureDetector(
-                              onTap: () {
-                                getGalleryImage1();
-                              },
-                              child: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  Container(
-                                    child: CircleAvatar(
-                                      radius: 50,
-                                      child: _image1 != null
-                                          ? CircleAvatar(
-                                              radius: 50,
-                                              backgroundImage: FileImage(
-                                                _image1!.absolute,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: getGalleryImage1,
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 50,
+                                        child: _image1 != null
+                                            ? CircleAvatar(
+                                                radius: 50,
+                                                backgroundImage: FileImage(
+                                                  _image1!.absolute,
+                                                ),
+                                              )
+                                            : CircleAvatar(
+                                                radius: 50,
+                                                backgroundImage:
+                                                    _profileImageProvider(),
                                               ),
-                                            )
-                                          : CircleAvatar(
-                                              radius: 50,
-                                              backgroundImage:
-                                                  _profileImageProvider(),
-                                            ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    bottom: 0,
-                                    right: 0,
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        getGalleryImage1();
-                                      },
-                                      child: Container(
-                                        height: 32,
-                                        width: 32,
-                                        alignment: Alignment.center,
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFFF6AE02),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.camera_alt_rounded,
-                                          color: Colors.white,
-                                          size: 16,
+                                      ),
+                                      Positioned(
+                                        bottom: 0,
+                                        right: 0,
+                                        child: Container(
+                                          height: 32,
+                                          width: 32,
+                                          alignment: Alignment.center,
+                                          decoration: const BoxDecoration(
+                                            color: Color(0xFFF6AE02),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.camera_alt_rounded,
+                                            color: Colors.white,
+                                            size: 16,
+                                          ),
                                         ),
                                       ),
-                                    ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    SizedBox(height: res_height * 0.08),
+                    SizedBox(height: res_height * 0.01),
                     Text(
                       nameapi == "null"
                           ? sp.name.toString() == "null"

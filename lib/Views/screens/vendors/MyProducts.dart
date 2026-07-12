@@ -8,6 +8,7 @@ import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
 import 'package:jebby/Views/screens/vendors/ProductDetails.dart';
 import 'package:jebby/Views/screens/vendors/AddProduct.dart';
+import 'package:jebby/Views/screens/vendors/vendorhome.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/res/color.dart';
 import 'package:provider/provider.dart';
@@ -186,7 +187,13 @@ class _ProductListScreenState extends State<ProductListScreen> {
         foregroundColor: Colors.black,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => Get.back(),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Get.back();
+            } else {
+              Get.offAll(() => const VendrosHomeScreen());
+            }
+          },
           style: IconButton.styleFrom(foregroundColor: Colors.black),
         ),
       ),
@@ -345,7 +352,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
                               productName.contains(_searchQuery);
                         }).toList();
                         return GridView.builder(
-                padding: EdgeInsets.zero,
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).padding.bottom + 24,
+                ),
 
                 gridDelegate:
                 const SliverGridDelegateWithFixedCrossAxisCount(
@@ -462,7 +471,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   SizedBox(height:5),
 
                   Text(
-                    "\$ ${price}",
+                    "\$${price}",
                     style: GoogleFonts.inter(
                       fontWeight: FontWeight.w700,
                       fontSize: 38 / 2,

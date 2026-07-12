@@ -5,6 +5,24 @@ class OnboardingStatus {
   static const String complete = 'complete';
 }
 
+/// Internal steps 6–10 are the counted form flow (shown as Step 1–5 in UI).
+/// Intro screens before step 6 are shown once and are not part of step progress.
+class OnboardingSteps {
+  static const int formStart = 6;
+  static const int formEnd = 10;
+  static const int formCount = formEnd - formStart + 1;
+
+  static int normalize(int step) {
+    if (step < formStart) return formStart;
+    if (step > formEnd) return formEnd;
+    return step;
+  }
+
+  static int toDisplayStep(int internalStep) {
+    return (normalize(internalStep) - formStart + 1).clamp(1, formCount);
+  }
+}
+
 class OnboardingState {
   final int onboardingStep;
   final String onboardingStatus;
@@ -12,7 +30,7 @@ class OnboardingState {
   final bool stripeOnboardingComplete;
 
   const OnboardingState({
-    this.onboardingStep = 1,
+    this.onboardingStep = OnboardingSteps.formStart,
     this.onboardingStatus = OnboardingStatus.notStarted,
     this.stripeAccountId,
     this.stripeOnboardingComplete = false,
@@ -28,14 +46,19 @@ class OnboardingState {
 
   int get stepsRemaining {
     if (isComplete) return 0;
-    if (onboardingStatus == OnboardingStatus.notStarted) return 10;
-    return (10 - onboardingStep).clamp(1, 10);
+    if (onboardingStatus == OnboardingStatus.notStarted) {
+      return OnboardingSteps.formCount;
+    }
+    final step = OnboardingSteps.normalize(onboardingStep);
+    return (OnboardingSteps.formEnd - step).clamp(0, OnboardingSteps.formCount);
   }
 
   int get resumeStep {
-    if (onboardingStatus == OnboardingStatus.notStarted) return 1;
-    if (isComplete) return 10;
-    return onboardingStep.clamp(1, 10);
+    if (onboardingStatus == OnboardingStatus.notStarted) {
+      return OnboardingSteps.formStart;
+    }
+    if (isComplete) return OnboardingSteps.formEnd;
+    return OnboardingSteps.normalize(onboardingStep);
   }
 
   OnboardingState copyWith({
@@ -55,7 +78,10 @@ class OnboardingState {
 
   factory OnboardingState.fromJson(Map<String, dynamic> json) {
     return OnboardingState(
-      onboardingStep: _parseInt(json['onboarding_step'], fallback: 1),
+      onboardingStep: _parseInt(
+        json['onboarding_step'],
+        fallback: OnboardingSteps.formStart,
+      ),
       onboardingStatus:
           json['onboarding_status']?.toString() ??
           OnboardingStatus.notStarted,

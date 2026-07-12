@@ -4,30 +4,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/helper/colors.dart';
 import 'package:jebby/Views/screens/onboarding/onboarding_scaffold.dart';
 import 'package:jebby/Views/screens/onboarding/stripe_welcome.dart';
-import 'package:jebby/view_model/onboarding_controller.dart';
 
-class BeforeYouContinueScreen extends StatefulWidget {
+class BeforeYouContinueScreen extends StatelessWidget {
   const BeforeYouContinueScreen({super.key});
-
-  @override
-  State<BeforeYouContinueScreen> createState() =>
-      _BeforeYouContinueScreenState();
-}
-
-class _BeforeYouContinueScreenState extends State<BeforeYouContinueScreen> {
-  late final OnboardingController _controller =
-      ensureOnboardingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.advanceTo(4);
-  }
 
   @override
   Widget build(BuildContext context) {
     return OnboardingScaffold(
-      currentStep: 4,
+      showStepProgress: false,
       title: 'Safety',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -78,11 +62,8 @@ class _BeforeYouContinueScreenState extends State<BeforeYouContinueScreen> {
       bottomBar: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
         child: OnboardingPrimaryButton(
-          label: 'Continue to Verification',
-          onPressed: () {
-            _controller.advanceTo(5);
-            Get.to(() => const StripeWelcomeScreen());
-          },
+          label: 'Continue',
+          onPressed: () => Get.to(() => const StripeWelcomeScreen()),
         ),
       ),
     );

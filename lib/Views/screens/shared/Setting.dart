@@ -9,7 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/screens/agreements/JebbyAbout.dart';
 import 'package:jebby/Views/screens/agreements/privacyPolicy.dart';
 import 'package:jebby/Views/screens/auth/createnewpassword.dart';
-import 'package:jebby/Views/screens/onboarding/stripe_identity_screen.dart';
+import 'package:jebby/view_model/onboarding_controller.dart';
 import 'package:jebby/Views/screens/profile/editprofile.dart';
 import 'package:jebby/Views/support/FAQs.dart';
 import 'package:jebby/Views/support/contactsupport.dart';
@@ -19,7 +19,6 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../Services/provider/sign_in_provider.dart';
 import '../../../model/user_model.dart';
-import '../../../view_model/onboarding_controller.dart';
 import '../../../view_model/user_view_model.dart';
 import '../agreements/termsAndConditions.dart';
 
@@ -205,7 +204,8 @@ class _SettingsState extends State<Settings> {
 
   void _openVerification() {
     if (_identityVerified) return;
-    Get.to(() => const StripeIdentityScreen());
+    final controller = ensureOnboardingController();
+    controller.startOrResume();
   }
 
   @override

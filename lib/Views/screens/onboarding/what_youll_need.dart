@@ -3,31 +3,15 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/helper/colors.dart';
 import 'package:jebby/Views/screens/onboarding/before_you_continue.dart';
-import 'package:jebby/Views/screens/onboarding/stripe_identity_screen.dart';
 import 'package:jebby/Views/screens/onboarding/onboarding_scaffold.dart';
-import 'package:jebby/view_model/onboarding_controller.dart';
 
-class WhatYoullNeedScreen extends StatefulWidget {
+class WhatYoullNeedScreen extends StatelessWidget {
   const WhatYoullNeedScreen({super.key});
-
-  @override
-  State<WhatYoullNeedScreen> createState() => _WhatYoullNeedScreenState();
-}
-
-class _WhatYoullNeedScreenState extends State<WhatYoullNeedScreen> {
-  late final OnboardingController _controller =
-      ensureOnboardingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.advanceTo(2);
-  }
 
   @override
   Widget build(BuildContext context) {
     return OnboardingScaffold(
-      currentStep: 2,
+      showStepProgress: false,
       title: 'Get Ready',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -89,15 +73,7 @@ class _WhatYoullNeedScreenState extends State<WhatYoullNeedScreen> {
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
         child: OnboardingPrimaryButton(
           label: 'Continue',
-          onPressed: () async {
-            if (await _controller.isStripeIdentityVerified()) {
-              await _controller.advanceTo(4);
-              Get.to(() => const BeforeYouContinueScreen());
-            } else {
-              await _controller.advanceTo(3);
-              Get.to(() => const StripeIdentityScreen());
-            }
-          },
+          onPressed: () => Get.to(() => const BeforeYouContinueScreen()),
         ),
       ),
     );

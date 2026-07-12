@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/helper/colors.dart';
+import 'package:jebby/model/onboarding_state.dart';
 
 class StepProgressBar extends StatelessWidget {
   final int currentStep;
@@ -10,7 +11,7 @@ class StepProgressBar extends StatelessWidget {
   const StepProgressBar({
     super.key,
     required this.currentStep,
-    this.totalSteps = 10,
+    this.totalSteps = OnboardingSteps.formCount,
   });
 
   @override
@@ -47,20 +48,22 @@ class StepProgressBar extends StatelessWidget {
 }
 
 class OnboardingScaffold extends StatelessWidget {
-  final int currentStep;
+  final int? currentStep;
   final String title;
   final Widget body;
   final Widget? bottomBar;
   final bool showBackButton;
+  final bool showStepProgress;
   final VoidCallback? onBack;
 
   const OnboardingScaffold({
     super.key,
-    required this.currentStep,
+    this.currentStep,
     required this.title,
     required this.body,
     this.bottomBar,
     this.showBackButton = true,
+    this.showStepProgress = true,
     this.onBack,
   });
 
@@ -96,7 +99,10 @@ class OnboardingScaffold extends StatelessWidget {
       ),
       body: Column(
         children: [
-          StepProgressBar(currentStep: currentStep),
+          if (showStepProgress && currentStep != null)
+            StepProgressBar(
+              currentStep: OnboardingSteps.toDisplayStep(currentStep!),
+            ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20),

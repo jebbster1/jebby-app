@@ -73,7 +73,7 @@ class MyApp extends StatelessWidget {
       ],
       child: GetMaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'Flutter Demo',
+        title: 'Jebby',
         //   theme: ThemeData(primarySwatch: Colors.blue),
         theme: baseTheme.copyWith(
           textTheme: GoogleFonts.interTextTheme(baseTheme.textTheme),

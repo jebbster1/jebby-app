@@ -3,10 +3,10 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/helper/colors.dart';
 import 'package:jebby/Views/screens/auth/login.dart';
+import 'package:jebby/Views/screens/onboarding/onboarding_scaffold.dart';
 import 'package:provider/provider.dart';
 
 import '../../../res/color.dart';
-import '../../../utils/utils.dart';
 import '../../../view_model/auth_view_model.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -24,15 +24,126 @@ class _RegisterScreenState extends State<RegisterScreen> {
   int _value = 0; //="User";
   bool obscureText = true;
   bool obscureText1 = true;
-  final termscontroller = Get.put(TermsController());
-  TextEditingController _userNameController = TextEditingController();
+  final ValueNotifier<bool> _termsAccepted = ValueNotifier(false);
+  TextEditingController _firstNameController = TextEditingController();
+  TextEditingController _lastNameController = TextEditingController();
   TextEditingController _emailController = TextEditingController();
   TextEditingController _passwordController = TextEditingController();
   TextEditingController _confirmpasswordController = TextEditingController();
+  final FocusNode _passwordFocusNode = FocusNode();
+  late final Listenable _formFieldsListenable = Listenable.merge([
+    _firstNameController,
+    _lastNameController,
+    _emailController,
+    _passwordController,
+    _confirmpasswordController,
+    _termsAccepted,
+  ]);
+
+  static final RegExp _emailPattern = RegExp(
+    r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.(com)",
+  );
+
+  @override
+  void dispose() {
+    _passwordFocusNode.dispose();
+    _termsAccepted.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmpasswordController.dispose();
+    super.dispose();
+  }
+
+  _PasswordRequirements get _passwordRequirements =>
+      _PasswordRequirements.evaluate(_passwordController.text);
+
+  bool get _isRegisterEnabled {
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final confirm = _confirmpasswordController.text;
+
+    return firstName.isNotEmpty &&
+        lastName.isNotEmpty &&
+        email.isNotEmpty &&
+        _emailPattern.hasMatch(email) &&
+        _passwordRequirements.isComplete &&
+        confirm.isNotEmpty &&
+        password == confirm &&
+        _termsAccepted.value;
+  }
+
+  Widget _passwordRequirementRow({
+    required String label,
+    required bool met,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Text(
+            met ? '✅' : '❌',
+            style: const TextStyle(fontSize: 14),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: met ? Colors.green.shade700 : Colors.black54,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _submitRegistration(AuthViewModel authViewMode) {
+    if (!_isRegisterEnabled || authViewMode.signUpLoading) return;
+
+    final firstName = _firstNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    final fullName = '$firstName $lastName'.trim();
+
+    Map data = {
+      "full_name": fullName,
+      "email": _emailController.text.toString(),
+      "password": _passwordController.text.toString(),
+      "source": "simple",
+      "role": _value.toString(),
+    };
+    authViewMode.signUpApi(
+      data,
+      context,
+      isFromGuestFlow: widget.isGuestUserFlow,
+    );
+  }
+
+  Widget _buildRegisterButton({
+    required AuthViewModel authViewMode,
+    required double resWidth,
+    required bool isLoading,
+  }) {
+    final enabled = _isRegisterEnabled && !isLoading;
+
+    return SizedBox(
+      width: resWidth * 0.9,
+      child: OnboardingPrimaryButton(
+        label: 'Register',
+        isLoading: isLoading,
+        onPressed: enabled ? () => _submitRegistration(authViewMode) : null,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final authViewMode = Provider.of<AuthViewModel>(context);
     double res_width = MediaQuery.of(context).size.width;
     double res_height = MediaQuery.of(context).size.height;
     return Scaffold(
@@ -199,12 +310,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Text('Name'),
-                    // SizedBox(
-                    //   height: res_height * 0.01,
-                    // ),
                     Text(
-                      'Name',
+                      'First name',
                       style: GoogleFonts.inter(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -217,30 +324,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     Container(
                       width: res_width * 0.9,
                       child: TextFormField(
-                        controller: _userNameController,
+                        controller: _firstNameController,
                         autocorrect: false,
-                        // controller: userEmailController,
-                        validator: (text) {
-                          if (text == null ||
-                              text.isEmpty ||
-                              !text.contains("@")) {
-                            return 'Enter correct email';
-                          }
-                          return null;
-                        },
+                        textCapitalization: TextCapitalization.words,
                         style: GoogleFonts.inter(
                           color: Colors.black,
                           fontWeight: FontWeight.bold,
                         ),
                         decoration: InputDecoration(
-                          // prefixIcon: Icon(Icons.person_2,
-                          //   color: AppColors.darkGreyColor,
-                          // ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(15.0),
                           ),
                           enabledBorder: const OutlineInputBorder(
-                            borderSide: const BorderSide(
+                            borderSide: BorderSide(
                               color: AppColors.darkGreyColor,
                               width: 1,
                             ),
@@ -249,7 +345,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                           ),
                           focusedBorder: const OutlineInputBorder(
-                            borderSide: const BorderSide(
+                            borderSide: BorderSide(
                               color: AppColors.primaryColor,
                               width: 2,
                             ),
@@ -257,13 +353,68 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               Radius.circular(15),
                             ),
                           ),
-                      //    filled: true,
                           hintStyle: GoogleFonts.inter(
                             color: AppColors.darkGreyColor,
                             fontWeight: FontWeight.normal,
                           ),
-                          hintText: "example: John D" ,
-                        //  fillColor: lightBlue,
+                          hintText: 'John',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: res_height * 0.02),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Last name',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.black,
+                      ),
+                    ),
+                    SizedBox(
+                      height: res_height * 0.01,
+                    ),
+                    Container(
+                      width: res_width * 0.9,
+                      child: TextFormField(
+                        controller: _lastNameController,
+                        autocorrect: false,
+                        textCapitalization: TextCapitalization.words,
+                        style: GoogleFonts.inter(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15.0),
+                          ),
+                          enabledBorder: const OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.darkGreyColor,
+                              width: 1,
+                            ),
+                            borderRadius: BorderRadius.all(
+                              Radius.circular(15),
+                            ),
+                          ),
+                          focusedBorder: const OutlineInputBorder(
+                            borderSide: BorderSide(
+                              color: AppColors.primaryColor,
+                              width: 2,
+                            ),
+                            borderRadius: BorderRadius.all(
+                              Radius.circular(15),
+                            ),
+                          ),
+                          hintStyle: GoogleFonts.inter(
+                            color: AppColors.darkGreyColor,
+                            fontWeight: FontWeight.normal,
+                          ),
+                          hintText: 'Doe',
                         ),
                       ),
                     ),
@@ -365,17 +516,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       child: TextFormField(
                         obscureText: obscureText,
                         controller: _passwordController,
+                        focusNode: _passwordFocusNode,
                         autocorrect: false,
-                        // obscureText: true,
-                        // controller: userEmailController,
-                        validator: (text) {
-                          if (text == null ||
-                              text.isEmpty ||
-                              !text.contains("@")) {
-                            return 'Enter correct email';
-                          }
-                          return null;
-                        },
                         style: GoogleFonts.inter(
                           color: Colors.black,
                           fontWeight: FontWeight.bold,
@@ -426,6 +568,51 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           fillColor: Colors.white,
                         ),
                       ),
+                    ),
+                    ListenableBuilder(
+                      listenable: Listenable.merge([
+                        _passwordController,
+                        _passwordFocusNode,
+                      ]),
+                      builder: (context, _) {
+                        final password = _passwordController.text;
+                        final requirements =
+                            _PasswordRequirements.evaluate(password);
+                        final showChecklist = !requirements.isComplete &&
+                            (password.isNotEmpty ||
+                                _passwordFocusNode.hasFocus);
+
+                        if (!showChecklist) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 12),
+                            _passwordRequirementRow(
+                              label: 'Minimum 8 characters',
+                              met: requirements.minLength,
+                            ),
+                            _passwordRequirementRow(
+                              label: 'At least 1 uppercase letter',
+                              met: requirements.hasUppercase,
+                            ),
+                            _passwordRequirementRow(
+                              label: 'At least 1 lowercase letter',
+                              met: requirements.hasLowercase,
+                            ),
+                            _passwordRequirementRow(
+                              label: 'At least 1 number',
+                              met: requirements.hasNumber,
+                            ),
+                            _passwordRequirementRow(
+                              label: 'At least 1 special character',
+                              met: requirements.hasSpecial,
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -507,120 +694,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
                 SizedBox(height: res_height * 0.015),
-                Obx(
-                  () => CheckboxListTile(
-                    title: Text(
-                      "I agree to the Terms of Services and Privacy Policy",
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    value: termscontroller.termsValue.value,
-                    activeColor: AppColors.primaryColor,
-                    onChanged: (newValue) {
-                      if (termscontroller.termsValue == true) {
-                        termscontroller.chanegValue(false);
-                      } else {
-                        termscontroller.chanegValue(true);
-                      }
-                    },
-                    controlAffinity:
-                        ListTileControlAffinity
-                            .leading, //  <-- leading Checkbox
-                  ),
-                ),
-                SizedBox(height: res_height * 0.02),
-                InkWell(
-                  onTap: () {
-                    if (_userNameController.text.isEmpty &&
-                        _emailController.text.isEmpty &&
-                        _passwordController.text.isEmpty &&
-                        _confirmpasswordController.text.isEmpty) {
-                      Utils.flushBarErrorMessage(
-                        'Please fill all the required fields',
-                        context,
-                      );
-                      return;
-                    }
-
-                    final bool emailValid = RegExp(
-                      r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.(com)",
-                    ).hasMatch(_emailController.text);
-                    if (_userNameController.text.isEmpty) {
-                      Utils.flushBarErrorMessage(
-                        'Please enter your name',
-                        context,
-                      );
-                    } else if (_emailController.text.isEmpty || !emailValid) {
-                      Utils.flushBarErrorMessage(
-                        'Please enter valid email',
-                        context,
-                      );
-                    } else if (_passwordController.text.isEmpty) {
-                      Utils.flushBarErrorMessage(
-                        'Please enter password',
-                        context,
-                      );
-                    } else if ((!_passwordController.text.contains(
-                      RegExp(r'^(?=.*?[A-Z])(?=.*?[!@#\$&*~]).{8,}$'),
-                    ))) {
-                      Utils.flushBarErrorMessage(
-                        'Password should be minimum of 8 characters and contain small letter, capital letter and special character',
-                        context,
-                      );
-                    } else if (_confirmpasswordController.text.isEmpty) {
-                      Utils.flushBarErrorMessage(
-                        'Please enter confirm password',
-                        context,
-                      );
-                    } else if (_passwordController.text !=
-                        _confirmpasswordController.text) {
-                      Utils.flushBarErrorMessage(
-                        'Password doesn\'t match ',
-                        context,
-                      );
-                    } else if (!termscontroller.termsValue.value) {
-                      Utils.flushBarErrorMessage(
-                        'Please accept our Terms of services & Privacy Policy',
-                        context,
-                      );
-                    } else {
-                      Map data = {
-                        "full_name": _userNameController.text,
-                        "email": _emailController.text.toString(),
-                        "password": _passwordController.text.toString(),
-                        "source": "simple",
-                        "role": _value.toString(),
-                      };
-                      authViewMode.signUpApi(
-                        data,
-                        context,
-                        isFromGuestFlow: widget.isGuestUserFlow,
-                      );
-                    }
-
-                    //Get.to(() => SetProfileScreen());
-                  },
-                  borderRadius: BorderRadius.circular(30),
-                  child: Container(
-                    height: res_height * 0.055,
-                    width: res_width * 0.9,
-                    child: Center(
-                      child: Text(
-                        'Register',
+                ValueListenableBuilder<bool>(
+                  valueListenable: _termsAccepted,
+                  builder: (context, termsAccepted, _) {
+                    return CheckboxListTile(
+                      title: Text(
+                        "I agree to the Terms of Services and Privacy Policy",
                         style: GoogleFonts.inter(
-                          fontWeight: FontWeight.bold,
                           fontSize: 16,
-                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryColor,
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                  ),
+                      value: termsAccepted,
+                      activeColor: AppColors.primaryColor,
+                      onChanged: (newValue) {
+                        _termsAccepted.value = newValue ?? false;
+                      },
+                      controlAffinity: ListTileControlAffinity.leading,
+                    );
+                  },
+                ),
+                SizedBox(height: res_height * 0.02),
+                Consumer<AuthViewModel>(
+                  builder: (context, authViewMode, _) {
+                    return ListenableBuilder(
+                      listenable: _formFieldsListenable,
+                      builder: (context, __) {
+                        return _buildRegisterButton(
+                          authViewMode: authViewMode,
+                          resWidth: res_width,
+                          isLoading: authViewMode.signUpLoading,
+                        );
+                      },
+                    );
+                  },
                 ),
                 SizedBox(height: res_height * 0.02),
                 Row(
@@ -665,5 +772,35 @@ class TermsController extends GetxController {
   void chanegValue(data) {
     termsValue.value = data;
     update();
+  }
+}
+
+class _PasswordRequirements {
+  final bool minLength;
+  final bool hasUppercase;
+  final bool hasLowercase;
+  final bool hasNumber;
+  final bool hasSpecial;
+
+  const _PasswordRequirements({
+    required this.minLength,
+    required this.hasUppercase,
+    required this.hasLowercase,
+    required this.hasNumber,
+    required this.hasSpecial,
+  });
+
+  bool get isComplete =>
+      minLength && hasUppercase && hasLowercase && hasNumber && hasSpecial;
+
+  static _PasswordRequirements evaluate(String password) {
+    return _PasswordRequirements(
+      minLength: password.length >= 8,
+      hasUppercase: RegExp(r'[A-Z]').hasMatch(password),
+      hasLowercase: RegExp(r'[a-z]').hasMatch(password),
+      hasNumber: RegExp(r'\d').hasMatch(password),
+      hasSpecial: RegExp(r'''[!@#$%^&*(),.?":{}|<>_\-\[\]\\/`~+=;']''')
+          .hasMatch(password),
+    );
   }
 }

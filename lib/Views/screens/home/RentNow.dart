@@ -796,7 +796,7 @@ class _RentnowScreenState extends State<RentnowScreen> {
                       ),
                     ),
                     Text(
-                      "\$ ${double.tryParse(widget.price.toString())?.toStringAsFixed(2) ?? widget.price}",
+                      "\$${double.tryParse(widget.price.toString())?.toStringAsFixed(2) ?? widget.price}",
                       style: GoogleFonts.inter(
                         fontSize: 20,
                         color: _accent,

@@ -229,7 +229,7 @@ class _WishlistProductCard extends StatelessWidget {
   static const double _radius = 16;
   static const double _imageHeight = 118;
 
-  String get _priceLabel => '\$ ${price.toStringAsFixed(2)}';
+  String get _priceLabel => '\$${price.toStringAsFixed(2)}';
 
   @override
   Widget build(BuildContext context) {

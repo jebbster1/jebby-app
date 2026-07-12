@@ -28,6 +28,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:jebby/Views/widgets/rentals_coming_soon_banner.dart';
 import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
 
@@ -66,16 +67,25 @@ class _HomeScreenState extends State<HomeScreen> {
   String? role;
   String? address;
 
+  String? _normalizeOptionalText(String? value) {
+    if (value == null) return null;
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') return null;
+    return trimmed;
+  }
+
   void profileData(BuildContext context) async {
     getUserDate()
         .then((value) async {
-          print("sdsdsdsdsdsdsds: ${value.address.toString()}");
-          token = value.token.toString();
-          sourceId = value.id.toString();
-          fullname = value.name.toString();
-          email = value.email.toString();
-          role = value.role.toString();
-          address = value.address.toString();
+          if (!mounted) return;
+          setState(() {
+            token = value.token?.toString();
+            sourceId = value.id?.toString() ?? '';
+            fullname = value.name?.toString();
+            email = value.email?.toString();
+            role = value.role?.toString();
+            address = _normalizeOptionalText(value.address);
+          });
         })
         .onError((error, stackTrace) {
           if (kDebugMode) {}
@@ -511,30 +521,29 @@ class _HomeScreenState extends State<HomeScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Welcome Back, ${fullname}',
+                                    'Welcome Back, ${fullname ?? ''}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 20,
                                       fontWeight: FontWeight.w800,
-                                      height: 1.1,
+                                      height: address != null ? 1.1 : 1.8,
                                     ),
                                   ),
-                                  SizedBox(height: 6),
-                                  Text(
-                                    (address != null &&
-                                            address!.trim().isNotEmpty)
-                                        ? address!
-                                        : 'Address not available',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 14.5,
-                                      fontWeight: FontWeight.w500,
+                                  if (address != null) ...[
+                                    SizedBox(height: 6),
+                                    Text(
+                                      address!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -595,69 +604,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-
-                // SizedBox(height: 20),
-                // Row(
-                //   children: [
-                //     Container(
-                //       width: res_width * 0.94,
-                //       child: TextFormField(
-                //         onChanged: (value) {},
-                //         controller: searchController,
-                //         style: const TextStyle(
-                //           color: Colors.black,
-                //           fontWeight: FontWeight.bold,
-                //         ),
-                //         decoration: InputDecoration(
-                //           suffixIcon: InkWell(
-                //             onTap: () {
-                //               if (searchController.text.isNotEmpty) {
-                //                 Navigator.of(context).push(
-                //                   MaterialPageRoute(
-                //                     builder:
-                //                         (context) => SearchData(
-                //                           word: searchController.text,
-                //                         ),
-                //                   ),
-                //                 );
-                //               }
-                //             },
-                //             child: Icon(Icons.search, color: kprimaryColor),
-                //           ),
-                //           border: OutlineInputBorder(
-                //             borderRadius: BorderRadius.circular(15.0),
-                //           ),
-                //           enabledBorder: OutlineInputBorder(
-                //             borderSide: BorderSide(
-                //               color: kprimaryColor,
-                //               width: 1,
-                //             ),
-                //             borderRadius: const BorderRadius.all(
-                //               Radius.circular(15),
-                //             ),
-                //           ),
-                //           focusedBorder: OutlineInputBorder(
-                //             borderSide: BorderSide(
-                //               color: kprimaryColor,
-                //               width: 1,
-                //             ),
-                //             borderRadius: const BorderRadius.all(
-                //               Radius.circular(15),
-                //             ),
-                //           ),
-                //           filled: true,
-                //           hintStyle: const TextStyle(
-                //             color: Colors.grey,
-                //             fontSize: 15,
-                //           ),
-                //           hintText: "Product Name",
-                //           fillColor: Colors.white,
-                //         ),
-                //       ),
-                //     ),
-                //   ],
-                // ),
-                SizedBox(height: res_height * 0.03),
+                SizedBox(height: res_height * 0.02),
+                RentalsComingSoonBanner(),
+                SizedBox(height: res_height * 0.02),
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10),
                   child: Row(
@@ -741,7 +690,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                 ),
-                SizedBox(height: res_height * 0.02),
+                SizedBox(height: res_height * 0.01),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   child: Row(
@@ -1147,24 +1096,25 @@ class _HomeScreenState extends State<HomeScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.location_on,
-                                size: 16,
-                                color: Colors.white70,
-                              ),
-                              SizedBox(width: 4),
-                              Text(
-                                "${locationText ?? 'Location unavailable'}",
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
+                          // TODO: when location is handled in list your product screen, uncomment the following code with fixing location text function to show address not lat lng
+                          // SizedBox(height: 8),
+                          // Row(
+                          //   children: [
+                          //     Icon(
+                          //       Icons.location_on,
+                          //       size: 16,
+                          //       color: Colors.white70,
+                          //     ),
+                          //     SizedBox(width: 4),
+                          //     Text(
+                          //       "${locationText ?? 'Location unavailable'}",
+                          //       style: TextStyle(
+                          //         color: Colors.white70,
+                          //         fontSize: 14,
+                          //       ),
+                          //     ),
+                          //   ],
+                          // ),
                         ],
                       ),
                     ),

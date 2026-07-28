@@ -11,6 +11,7 @@ import 'package:jebby/model/onboarding_state.dart';
 import 'package:jebby/model/provider_onboarding_data.dart';
 import 'package:jebby/respository/auth_repository.dart';
 import 'package:jebby/view_model/apiServices.dart';
+import 'package:jebby/Services/analytics_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 OnboardingController ensureOnboardingController() {
@@ -203,6 +204,14 @@ class OnboardingController extends GetxController {
 
     await _persistLocal();
     _syncToServer();
+
+    if (step >= OnboardingSteps.formStart && step <= OnboardingSteps.formEnd) {
+      AnalyticsService.instance.track(
+        'stripe_onboarding_step_completed',
+        props: {'step': step},
+      );
+    }
+
     update();
   }
 
@@ -359,6 +368,7 @@ class OnboardingController extends GetxController {
         return;
       }
       await advanceTo(OnboardingSteps.formStart);
+      AnalyticsService.instance.track('stripe_onboarding_started');
       navigateToStep(OnboardingSteps.formStart);
       return;
     }

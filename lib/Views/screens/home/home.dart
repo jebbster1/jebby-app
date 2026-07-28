@@ -18,6 +18,7 @@ import 'package:jebby/Views/screens/mainfolder/drawer.dart';
 import 'package:jebby/Views/screens/profile/userprofile.dart';
 import 'package:intl/intl.dart';
 import 'package:jebby/Views/screens/home/searchData.dart';
+import 'package:jebby/Services/analytics_service.dart';
 import 'package:jebby/model/categoryList_model.dart';
 import 'package:jebby/model/sub_category_list_model.dart';
 import 'package:jebby/res/color.dart';
@@ -829,6 +830,13 @@ class _HomeScreenState extends State<HomeScreen> {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
+          AnalyticsService.instance.track(
+            'category_viewed',
+            props: {
+              'category_id': id,
+              'source': 'home',
+            },
+          );
           Get.to(
             () => ElectronicsScreen(categoryname: txt, id: id, pictureurl: img),
           );

@@ -13,6 +13,7 @@ import 'package:jebby/Views/screens/onboarding/verify_identity_screen.dart';
 import 'package:jebby/model/provider_onboarding_data.dart';
 import 'package:jebby/view_model/apiServices.dart';
 import 'package:jebby/view_model/onboarding_controller.dart';
+import 'package:jebby/Services/analytics_service.dart';
 
 class ReviewSubmitScreen extends StatefulWidget {
   const ReviewSubmitScreen({super.key});
@@ -159,6 +160,8 @@ class _ReviewSubmitScreenState extends State<ReviewSubmitScreen> {
       _isSubmitting = true;
       _errorMessage = null;
     });
+
+    AnalyticsService.instance.track('stripe_onboarding_submitted');
 
     await _controller.updateProviderData(
       _controller.providerData.copyWith(

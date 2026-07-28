@@ -24,6 +24,7 @@ import '../../../res/app_url.dart';
 import '../../../view_model/apiServices.dart';
 import '../../../view_model/user_view_model.dart';
 import 'package:jebby/res/color.dart';
+import 'package:jebby/Services/analytics_service.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final dynamic id;
@@ -102,6 +103,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   void initState() {
     super.initState();
+    AnalyticsService.instance.track(
+      'product_viewed',
+      props: {
+        'product_id': widget.id,
+        'source': widget.sourceId?.toString() ?? 'detail',
+      },
+    );
     _galleryUrls = [AppUrl.baseUrlM + widget.image.toString()];
     profileData();
     getVendor();
@@ -342,6 +350,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   void rentClicked(BuildContext context) async {
+    AnalyticsService.instance.track(
+      'rent_flow_started',
+      props: {
+        'product_id': widget.id,
+      },
+    );
     Get.to(
       () => RentnowScreen(
         vendorName,

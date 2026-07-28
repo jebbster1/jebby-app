@@ -22,6 +22,7 @@ import '../../../model/user_model.dart';
 import 'package:dio/dio.dart' as d;
 import 'package:provider/provider.dart';
 import '../../../view_model/user_view_model.dart';
+import 'package:jebby/Services/analytics_service.dart';
 
 class AddProductScreen extends StatefulWidget {
   /// When true, step-1 back replaces the stack with [ProductListScreen].
@@ -141,6 +142,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     });
     getData();
     profileData(context);
+    AnalyticsService.instance.track('listing_started');
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeResumeDraft());
   }
 
@@ -755,6 +757,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
     await _saveDraft();
 
     if (_currentStep < _totalSteps) {
+      AnalyticsService.instance.track(
+        'listing_step_completed',
+        props: {'step': _currentStep},
+      );
       _goToStep(_currentStep + 1);
     }
   }
@@ -842,6 +848,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
               SecurityDepositeController.text.toString(),
               (list) async {
                 await _clearDraft();
+                AnalyticsService.instance.track('listing_published');
                 if (mounted) {
                   setState(() => addBtn = false);
                   Get.off(() => const ListingSuccessScreen());

@@ -13,6 +13,7 @@ import '../../../model/categoryList_model.dart';
 import '../../../model/sub_category_list_model.dart';
 import '../../../res/app_url.dart';
 import '../../../view_model/category_get_View_model.dart';
+import 'package:jebby/Services/analytics_service.dart';
 
 /// Featured categories grid. Designed to sit inside [MainScreen] (index 2) so the
 /// shell bottom navigation stays visible—do not push this with `Get.to`; call
@@ -200,6 +201,13 @@ class _FeaturedCategoriesScreenState extends State<FeaturedCategoriesScreen> {
   Widget _categoryCard({txt, img, id, int? subcategoryCount}) {
     return GestureDetector(
       onTap: () {
+        AnalyticsService.instance.track(
+          'category_viewed',
+          props: {
+            'category_id': id,
+            'source': 'featured_categories',
+          },
+        );
         Get.to(
           () => ElectronicsScreen(categoryname: txt, id: id, pictureurl: img),
         );

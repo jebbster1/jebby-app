@@ -90,4 +90,5 @@ class AppUrl {
   static var stripeProviderSubmitRequirements =
       baseUrlM + '/stripe/provider/submit-requirements';
   static var stripeAccountStatus = baseUrlM + '/stripe/account-status/';
+  static var eventsUrl = baseUrlM + '/events';
 }

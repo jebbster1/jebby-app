@@ -18,6 +18,7 @@ import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
 import '../../../view_model/apiServices.dart';
 import '../../../view_model/user_view_model.dart';
+import 'package:jebby/Services/analytics_service.dart';
 
 // ignore: must_be_immutable
 class CheckoutScreen extends StatefulWidget {
@@ -239,6 +240,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         context,
       );
     } else {
+      AnalyticsService.instance.track(
+        'checkout_started',
+        props: {
+          'product_id': widget.productID,
+          'user_id': widget.userId,
+        },
+      );
       ApiRepository.shared.stripePayment(
         num.tryParse(
               (((widget.price * (dayCount + 1)) +

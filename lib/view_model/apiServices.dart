@@ -53,7 +53,6 @@ import '../model/getTermsAndConditionsModel.dart';
 import '../model/getUsagePolicyModel.dart';
 import '../model/getUserCredentialModel.dart';
 import '../model/getVendorProductsByReviewsModel.dart';
-import '../model/payByPayPalModel.dart';
 import '../model/postNegotiationRequestModel.dart';
 import '../model/postNotificationSeenModel.dart';
 import '../model/postOrderStatusUpdateModel.dart';
@@ -1298,7 +1297,6 @@ class ApiRepository extends ChangeNotifier {
         );
         ScaffoldMessenger.of(context).showSnackBar(processingSnackBar);
         
-        // ChargeBack(context, userid, productId, rentStart, originalReturn, name, email, location, lat, long, negoPrice,shipping_address, cardNumber, expiryMonth, expiryYear, cvv, amount, security_deposit);
         ApiRepository.shared.postOrder(
           context,
           userid,
@@ -1362,86 +1360,6 @@ class ApiRepository extends ChangeNotifier {
       }
     }
     return PayWithStripeModel();
-  }
-
-  void ChargeBack(
-    context,
-    userid,
-    productId,
-    rentStart,
-    originalReturn,
-    name,
-    email,
-    location,
-    lat,
-    long,
-    negoPrice,
-    shipping_address,
-    cardNumber,
-    expiryMonth,
-    expiryYear,
-    cvv,
-    amount,
-    security_deposit,
-  ) async {
-    final String SeenMessageUrl = "${Url}/PyaByStripeSecurityDeposit";
-    var data = {
-      "cardNumber": cardNumber,
-      "exp_month": expiryMonth,
-      "exp_year": expiryYear,
-      "cvc": cvv,
-      "amount": security_deposit,
-    };
-
-    try {
-      final response = await http.post(
-        Uri.parse(SeenMessageUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(data),
-      );
-      final responseBody = jsonDecode(response.body);
-
-      final snackBar = new SnackBar(
-        content: new Text("Placing payment please wait"),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
-      ApiRepository.shared.postOrder(
-        context,
-        userid,
-        productId,
-        rentStart,
-        originalReturn,
-        name,
-        email,
-        location,
-        lat,
-        long,
-        negoPrice,
-        shipping_address,
-        security_deposit,
-        responseBody["paymentIntent"]["id"],
-      );
-      // if (responseBody["message"].toString() == 'updated') {
-      //   if(prefs.getInt('type') == 1){
-      //     name == "leave" ?  Get.to(() => Requests())
-      //      : Get.to(() => BottomInvoiceScreen(side: true,));
-      //      } else{
-      //       name == "leave" ?  Get.to(() => ShowLeave())
-      //      : Get.to(() => EmplSchedule());
-      //       // Utils.flushBarMessage(responseBody["message"].toString(), context);
-      //      }
-      // }
-      // else{
-      //   Utils.flushBarErrorMessage(responseBody["message"].toString(), context);
-      // }
-    } catch (err) {
-      final snackBar = new SnackBar(
-        content: new Text(
-          'Something went wrong plz check your internet connection',
-        ),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
-    }
   }
 
   Future<PostOrderModel> postOrder(
@@ -1578,31 +1496,6 @@ class ApiRepository extends ChangeNotifier {
       // onError("Internal Server Error");
     }
     return AddFavouriteModel();
-  }
-
-  Future<PayByPayPalModel> payWithPayPal(amount, vendorID, payerID) async {
-    final request = json.encode(<String, dynamic>{
-      "amount": amount,
-      "vendorId": vendorID,
-      "adminId": "talha@tempmail.com",
-      "PayerID": payerID,
-    });
-
-    final response = await http.post(
-      Uri.parse("http://192.168.18.39:7000/payByPayPal"),
-      body: request,
-      headers: {'Content-type': "application/json"},
-    );
-    if (response.statusCode == 200) {
-      try {} catch (error) {
-        // onError(error.toString());
-      }
-    } else if (response.statusCode == 400) {
-      // onError("You are not in Range");
-    } else if (response.statusCode == 500) {
-      // onError("Internal Server Error");
-    }
-    return PayByPayPalModel();
   }
 
   Future<GetNotificationModel> notifications(
@@ -2165,42 +2058,6 @@ class ApiRepository extends ChangeNotifier {
   getStripeTransactions(data) {
     stripeTransactionsModelList = data;
     notifyListeners();
-  }
-
-  Future<dynamic> updateProfile(String userId, String fullName, String email, String phoneNumber, String address, double? latitude, double? longitude, onResponse(dynamic data), onError(error)) async {
-    final request = json.encode(<String, dynamic>{
-      "full_name": fullName,
-      "email": email, 
-      "phoneNumber": phoneNumber,
-      "address": address,
-      "latitude": latitude,
-      "longitude": longitude,
-      "user_id": userId,
-    });
-
-    final response = await http.post(
-      Uri.parse("${Url}/update-profile"),
-      body: request,
-      headers: {
-        'Content-type': "application/json",
-      },
-    );
-
-    if (response.statusCode == 200) {
-      try {
-        var data = jsonDecode(response.body);
-        onResponse(data);
-        return data;
-      } catch (error) {
-        onError(error.toString());
-      }
-    }  else if (response.statusCode == 400) {
-      onError("Error checking verification status");
-    } else if (response.statusCode == 500) {
-      onError("Internal Server Error");
-    }
-    
-    return {};
   }
 
   // Check Stripe Connect account status

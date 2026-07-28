@@ -10,6 +10,7 @@ import 'package:jebby/model/sub_category_list_model.dart';
 import '../../../res/app_url.dart';
 import '../../../view_model/category_get_View_model.dart';
 import 'package:jebby/res/color.dart';
+import 'package:jebby/Services/analytics_service.dart';
 
 class ElectronicsScreen extends StatefulWidget {
   final String? id;
@@ -308,6 +309,14 @@ class _ElectronicsScreenState extends State<ElectronicsScreen> {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
+          AnalyticsService.instance.track(
+            'subcategory_viewed',
+            props: {
+              'category_id': widget.id,
+              'subcategory_id': id,
+              'source': 'category',
+            },
+          );
           Get.to(
                 () => Electronics2(
               parentCategoryName: widget.categoryname.toString(),

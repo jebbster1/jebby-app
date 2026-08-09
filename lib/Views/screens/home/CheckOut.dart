@@ -10,12 +10,13 @@ import 'package:jebby/Services/provider/sign_in_provider.dart';
 import 'package:jebby/Views/helper/colors.dart';
 import 'package:jebby/Views/screens/auth/register.dart';
 import 'package:jebby/res/color.dart';
-import 'package:jebby/utils/utils.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
+import '../../../utils/profile_image.dart';
 import '../../../view_model/apiServices.dart';
 import '../../../view_model/user_view_model.dart';
 import 'package:jebby/Services/analytics_service.dart';
@@ -31,22 +32,21 @@ class CheckoutScreen extends StatefulWidget {
   String cell;
   String vendorImage;
   var vendorID;
-  var pastart;
-  var paend;
+  var availableFrom;
+  var availableTo;
   var price;
   var vendorAccountId;
-  var vendorPayPalEmail;
   var userName;
   var email;
   var location;
   var lat;
   var long;
-  var negoPrice;
   var delivery_charges;
   var JebbyFee;
   var security_deposit;
   var zipCode;
   var countryCode;
+  var is_delivery;
 
   CheckoutScreen(
     this.userId,
@@ -58,22 +58,21 @@ class CheckoutScreen extends StatefulWidget {
     this.cell,
     this.vendorImage,
     this.vendorID,
-    this.pastart,
-    this.paend,
+    this.availableFrom,
+    this.availableTo,
     this.price,
     this.vendorAccountId,
-    this.vendorPayPalEmail,
     this.userName,
     this.email,
     this.location,
     this.lat,
     this.long,
-    this.negoPrice,
     this.delivery_charges,
     this.JebbyFee,
     this.security_deposit,
     this.zipCode,
     this.countryCode,
+    this.is_delivery,
   );
 
   @override
@@ -144,7 +143,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     selectedDate = DateTime.parse(widget.rentStart);
     selectedDate1 = DateTime.parse(widget.rentEnd);
     diff = selectedDate1.difference(selectedDate).inDays;
-    dc = _digits(widget.delivery_charges);
+    dc = widget.is_delivery == 1 ? _digits(widget.delivery_charges) : 0;
     Jebby = _digits(widget.JebbyFee);
   }
 
@@ -171,8 +170,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     }
     if (urls.isEmpty) {
-      final v = widget.vendorImage.toString();
-      if (v.isNotEmpty && v != 'null') urls.add(AppUrl.baseUrlM + v);
+      final v = ProfileImage.sanitizePath(widget.vendorImage.toString());
+      final vendorUrl = ProfileImage.resolveUrl(AppUrl.baseUrlM, v);
+      if (vendorUrl != null) urls.add(vendorUrl);
     }
     return urls;
   }
@@ -235,9 +235,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final ApplicationFees = JebbyFees + Totaltax;
 
     if (!termscontroller.termsValue.value) {
-      Utils.flushBarErrorMessage(
+      showAppErrorSnackbar(
         'You must agree to Terms of Service and Privacy Policy',
-        context,
+        title: 'Required',
       );
     } else {
       AnalyticsService.instance.track(
@@ -268,7 +268,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         widget.location,
         widget.lat,
         widget.long,
-        widget.negoPrice,
         '',
         widget.security_deposit.toString(),
         ApplicationFees,
@@ -491,7 +490,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           children: [
             const SizedBox(height: 20),
             Text(productName, style: _productTitleStyle()),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+            _roundedPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.is_delivery == 1 ? 'Delivery address' : 'Pickup location',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: _labelGrey,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.location?.toString() ?? '',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: _titleDark,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             _roundedPanel(
               child: Column(
                 children: [
@@ -505,11 +530,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     'Security deposit',
                     '\$${widget.security_deposit}',
                   ),
-                  _divider(),
-                  _summaryRow(
-                    'Delivery',
-                    '\$${widget.delivery_charges == '' ? 0 : widget.delivery_charges}',
-                  ),
+                  if (widget.is_delivery == 1) ...[
+                    _divider(),
+                    _summaryRow(
+                      'Delivery',
+                      '\$${widget.delivery_charges == '' ? 0 : widget.delivery_charges}',
+                    ),
+                  ],
                   _divider(),
                   _summaryRow(
                     'Sales tax',

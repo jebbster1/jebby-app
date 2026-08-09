@@ -731,7 +731,6 @@ class _TransactionListScreenState extends State<TransactionListScreen>
           data.name.toString(),
           data.totalPrice.toString(),
           data.email.toString(),
-          data.negoPrice.toString(),
         );
       },
     );
@@ -741,9 +740,8 @@ class _TransactionListScreenState extends State<TransactionListScreen>
     String name,
     String price,
     String email,
-    String negoPrice,
   ) {
-    final amount = negoPrice != '0' ? negoPrice : price;
+    final amount = price;
     return Material(
       color: Colors.white,
       elevation: 2,

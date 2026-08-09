@@ -9,6 +9,7 @@ import 'package:jebby/Views/screens/onboarding/bank_account_screen.dart';
 import 'package:jebby/Views/screens/onboarding/onboarding_form_widgets.dart';
 import 'package:jebby/Views/screens/onboarding/onboarding_scaffold.dart';
 import 'package:jebby/model/provider_onboarding_data.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/view_model/onboarding_controller.dart';
 
 class VerifyIdentityScreen extends StatefulWidget {
@@ -44,16 +45,8 @@ class _VerifyIdentityScreenState extends State<VerifyIdentityScreen> {
 
   bool get _needsBack => ProviderIdType.requiresBack(_idType);
 
-  void _showError(String message) {
-    Get.snackbar(
-      'Verification',
-      message,
-      snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.black87,
-      colorText: Colors.white,
-      margin: const EdgeInsets.all(16),
-    );
-  }
+  void _showError(String message) =>
+      showAppErrorSnackbar(message, title: 'Required');
 
   Future<void> _pickImage(bool isBack) async {
     final source = await showOnboardingImageSourceSheet(context);

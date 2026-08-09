@@ -3,9 +3,6 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
-import 'package:get/route_manager.dart';
-import 'package:jebby/Views/screens/auth/Otp.dart';
-import 'package:jebby/utils/show_snackbar.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
@@ -215,8 +212,15 @@ class SignInProvider extends ChangeNotifier {
         );
 
         // signing to firebase user instance
-        final User userDetails =
-            (await firebaseAuth.signInWithCredential(credential)).user!;
+        final userCredential =
+            await firebaseAuth.signInWithCredential(credential);
+        final userDetails = userCredential.user;
+        if (userDetails == null) {
+          _errorCode = 'Google sign-in failed. Please try again.';
+          _hasError = true;
+          notifyListeners();
+          return;
+        }
 
         // now save all values
         _name = userDetails.displayName;
@@ -230,7 +234,7 @@ class SignInProvider extends ChangeNotifier {
 
         //save in registerApi
         Map data = {
-          "full_name": userDetails.displayName,
+          "name": userDetails.displayName,
           "email": userDetails.email,
           "password": "",
           "source": "GOOGLE",
@@ -272,245 +276,6 @@ class SignInProvider extends ChangeNotifier {
     }
   }
 
-  // sign in with phone
-  Future signInWithPhone(phoneNumber, BuildContext context) async {
-    await firebaseAuth.verifyPhoneNumber(
-      phoneNumber: phoneNumber,
-      verificationCompleted: (PhoneAuthCredential credential) {},
-      // verificationCompleted: (PhoneAuthCredential credential) async {
-      //   try {
-      //     final UserCredential userCredential =
-      //         await firebaseAuth.signInWithCredential(credential);
-      //     final User user = userCredential.user!;
-
-      //     // now save all values
-      //     _name = user.displayName;
-      //     _email = user.email;
-      //     _imageUrl = user.photoURL;
-      //     _provider = "PHONE";
-      //     _uid = user.uid;
-
-      //     notifyListeners();
-
-      //     // save in registerApi
-      //     Map<String, dynamic> data = {
-      //       "full_name": user.displayName ?? "",
-      //       "email": user.email ?? "",
-      //       "password": "",
-      //       "source": "Phone",
-      //       "role": "user",
-      //     };
-      //     // authViewMode.signUpApiWithSocials(data, context);
-      //   } on FirebaseAuthException catch (e) {
-      //     _errorCode = e.code;
-      //     _hasError = true;
-      //     notifyListeners();
-      //   }
-      // },
-      verificationFailed: (FirebaseAuthException e) {
-        // _errorCode = e.code;
-        // _hasError = true;
-        // notifyListeners();
-        Get.showSnackbar(
-          GetSnackBar(
-            title: 'Error',
-            message: e.message.toString(),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.red,
-            snackPosition: SnackPosition.TOP,
-          ),
-        );
-      },
-      codeSent: (String verificationId, int? resendToken) {
-        // Save the verificationId for use in signInWithPhoneCode
-        // You can use a TextEditingController to get the SMS code from the user
-        showSnackBar(context, 'OTP SENT');
-        Get.to(
-          () => OTPSCREEN(
-            fromPhoneAuth: true,
-            verificationId: verificationId,
-            phoneNumber: phoneNumber,
-          ),
-        );
-      },
-      codeAutoRetrievalTimeout: (String verificationId) {},
-    );
-  }
-
-  // sign in with phone code
-  Future signInWithPhoneCode(
-    String verificationId,
-    String smsCode,
-    BuildContext context,
-  ) async {
-    final authViewMode = Provider.of<AuthViewModel>(context, listen: false);
-    final AuthCredential credential = PhoneAuthProvider.credential(
-      verificationId: verificationId,
-      smsCode: smsCode,
-    );
-
-    try {
-      final UserCredential userCredential = await firebaseAuth
-          .signInWithCredential(credential);
-      final User user = userCredential.user!;
-
-      // now save all values
-      _name = user.displayName;
-      _email = user.email;
-      _phoneNumber = user.phoneNumber;
-      _imageUrl = user.photoURL;
-      _provider = "PHONE";
-      _uid = user.uid;
-
-      notifyListeners();
-      int uniqueNumber = generateUniqueNumber();
-
-      // save in registerApi
-      Map<String, dynamic> data = {
-        "full_name": user.displayName ?? "",
-        "email": "Phone${uniqueNumber.toString()}@gmail.com",
-        "phoneNumber": user.phoneNumber ?? "",
-        "password": "",
-        "source": "Phone",
-        "role": "user",
-      };
-      authViewMode.signUpApi(data, context);
-    } on FirebaseAuthException catch (e) {
-      _errorCode = e.code;
-      _hasError = true;
-      notifyListeners();
-      Get.showSnackbar(
-        GetSnackBar(
-          title: 'Error',
-          message: e.message.toString(),
-          duration: Duration(seconds: 2),
-          backgroundColor: Colors.red,
-          snackPosition: SnackPosition.TOP,
-        ),
-      );
-    }
-  }
-
-  // // sign in with google
-  // Future signInWithGoogle(value, BuildContext context) async {
-  //   final authViewMode = Provider.of<AuthViewModel>(context,listen: false);
-  //   final GoogleSignInAccount? googleSignInAccount = await googleSignIn.signIn();
-
-  //   if (googleSignInAccount != null) {
-  //     // executing our authentication
-  //     try {
-  //       final GoogleSignInAuthentication googleSignInAuthentication = await googleSignInAccount.authentication;
-  //       final AuthCredential credential = GoogleAuthProvider.credential(
-  //         accessToken: googleSignInAuthentication.accessToken,
-  //         idToken: googleSignInAuthentication.idToken,
-  //       );
-
-  //       // signing to firebase user instance
-  //       final User userDetails = (await firebaseAuth.signInWithCredential(credential)).user!;
-  //       log("form Siging  Page"+userDetails.toString() + value.toString());
-
-  //       // now save all values
-  //       _name = userDetails.displayName;
-  //       _email = userDetails.email;
-  //       _imageUrl = userDetails.photoURL;
-  //       _provider = "GOOGLE";
-  //       _uid = userDetails.uid;
-  //       _role=value.toString();
-  //       notifyListeners();
-
-  //       //save in registerApi
-  //       Map data = {
-  //         "full_name": userDetails.displayName,
-  //         "email": userDetails.email,
-  //         "password": "",
-  //         "source": "GOOGLE",
-  //         "role": value.toString(),
-  //       };
-  //       authViewMode.signUpApiWithSocials(data, context);
-
-  //     } on FirebaseAuthException catch (e) {
-  //       switch (e.code) {
-  //         case "account-exists-with-different-credential":
-  //           _errorCode = "You already have an account with us. Use correct provider";
-  //           _hasError = true;
-  //           notifyListeners();
-  //           break;
-
-  //         case "null":
-  //           _errorCode = "Some unexpected error while trying to sign in";
-  //           _hasError = true;
-  //           notifyListeners();
-  //           break;
-  //         default:
-  //           _errorCode = e.toString();
-  //           _hasError = true;
-  //           notifyListeners();
-  //       }
-  //     }
-  //   } else {
-  //     _hasError = true;
-  //     notifyListeners();
-  //   }
-  // }
-
-  // sign in with facebook
-
-  // Future signInWithFacebook(value, BuildContext context) async {
-  //     final authViewMode = Provider.of<AuthViewModel>(context,listen: false);
-
-  //     try{
-
-  //      final LoginResult loginResult = await FacebookAuth.instance
-  //           .login(permissions: ['email']);
-
-  //     final OAuthCredential facebookAuthCredential =
-  //           FacebookAuthProvider.credential(loginResult.accessToken!.token);
-
-  //       var authResult = await FirebaseAuth.instance
-  //           .signInWithCredential(facebookAuthCredential);
-
-  //         //save in registerApi
-  //         if (authResult.user != null) {
-  //         Map data = {
-  //           "full_name": '',
-  //           "email":  authResult.user!.email,
-  //           "password": "",
-  //           "source": "FACEBOOK",
-  //           "role": value.toString(),
-  //         };
-  //         authViewMode.signUpApiWithSocials(data, context);
-  //         // saving the values
-  //         _name = '';
-  //         _email = authResult.user!.email;
-  //         _imageUrl = '';
-  //         _uid = authResult.user!.uid;
-  //         _hasError = false;
-  //         _provider = "FACEBOOK";
-  //         _role=value.toString();
-  //         notifyListeners();}
-  //         else {
-  //       }
-  //       } on FirebaseAuthException catch (e) {
-  //         switch (e.code) {
-  //           case "account-exists-with-different-credential":
-  //             _errorCode = "You already have an account with us. Use correct provider";
-  //             _hasError = true;
-  //             notifyListeners();
-  //             break;
-
-  //           case "null":
-  //             _errorCode = "Some unexpected error while trying to sign in";
-  //             _hasError = true;
-  //             notifyListeners();
-  //             break;
-  //           default:
-  //             _errorCode = e.toString();
-  //             _hasError = true;
-  //             notifyListeners();
-  //         }
-  //       }
-  //   }
-
   Future signInWithFacebook(value, BuildContext context) async {
     final authViewMode = Provider.of<AuthViewModel>(context, listen: false);
     _hasError = false;
@@ -526,13 +291,6 @@ class SignInProvider extends ChangeNotifier {
         fields: "name,email,picture.width(200)",
       );
 
-      // final OAuthCredential facebookAuthCredential =
-      //       FacebookAuthProvider.credential(loginResult.accessToken!.token);
-
-      //   var authResult = await FirebaseAuth.instance
-      //       .signInWithCredential(facebookAuthCredential);
-
-      // save in registerApi
       if (userData.isNotEmpty) {
         final String email = (userData['email'] ?? '').toString();
         if (email.isEmpty) {
@@ -543,22 +301,14 @@ class SignInProvider extends ChangeNotifier {
         }
 
         Map data = {
-          "full_name": userData['name'],
+          "name": userData['name'],
           "email": email,
           "password": "",
           "source": "FACEBOOK",
           "role": value.toString(),
         };
         authViewMode.signUpApiWithSocials(data, context);
-        // saving the values
-        // _name = '';
-        // // _email = authResult.user!.email;
-        // _imageUrl = '';
-        // // _uid = authResult.user!.uid;
-        // _hasError = false;
-        // _provider = "FACEBOOK";
-        // _role=value.toString();
-        notifyListeners(); // ✅ safe to call now
+        notifyListeners();
       } else {
         print('Login failed or cancelled');
       }
@@ -653,7 +403,7 @@ class SignInProvider extends ChangeNotifier {
 
       if (userData.user != null) {
         Map data = {
-          "full_name": profile.fullName,
+          "name": profile.fullName,
           "email": profile.email,
           "password": "",
           "source": "APPLE",
@@ -698,7 +448,6 @@ class SignInProvider extends ChangeNotifier {
             _phoneNumber = snapshot['phoneNumber'],
             _imageUrl = snapshot['image_url'],
             _provider = snapshot['provider'],
-            // _role = snapshot['role'],
           },
         );
   }
@@ -710,7 +459,7 @@ class SignInProvider extends ChangeNotifier {
     await r.set({
       "name": _name,
       "email": _email,
-      "phoneNumber": _phoneNumber,
+      "phone_number": _phoneNumber,
       "uid": _uid,
       "image_url": _imageUrl,
       "provider": _provider,
@@ -721,20 +470,13 @@ class SignInProvider extends ChangeNotifier {
 
   Future saveDataToSharedPreferences() async {
     final SharedPreferences s = await SharedPreferences.getInstance();
-    await s.setString('name', _name!);
-    if (_email != null) {
-      await s.setString('email', _email!);
-    } else {
-      await s.setString('email', '');
-    }
-    await s.setString('uid', _uid!);
-
-    await s.setString('phoneNumber', _phoneNumber!);
-
-    await s.setString('role', _role!);
-
-    await s.setString('image_url', _imageUrl!);
-    await s.setString('provider', _provider!);
+    await s.setString('name', _name ?? '');
+    await s.setString('email', _email ?? '');
+    await s.setString('uid', _uid ?? '');
+    await s.setString('phoneNumber', _phoneNumber ?? '');
+    await s.setString('role', _role ?? '');
+    await s.setString('image_url', _imageUrl ?? '');
+    await s.setString('provider', _provider ?? '');
     notifyListeners();
   }
 
@@ -762,40 +504,35 @@ class SignInProvider extends ChangeNotifier {
 
   // signout
   Future userSignOut() async {
-    SharedPreferences sharedPreferences = await SharedPreferences.getInstance();
-    sharedPreferences.remove("fullname");
-    sharedPreferences.remove("email");
-    sharedPreferences.remove("phoneNumber");
-    sharedPreferences.remove("image");
-    sharedPreferences.remove("address");
-    sharedPreferences.remove("latitude");
-    sharedPreferences.remove("longitude");
-    sharedPreferences.remove("number");
-    sharedPreferences.remove("token");
+    final sharedPreferences = await SharedPreferences.getInstance();
+    await sharedPreferences.remove("fullname");
+    await sharedPreferences.remove("email");
+    await sharedPreferences.remove("phoneNumber");
+    await sharedPreferences.remove("profileImage");
+    await sharedPreferences.remove("isGuest");
+    await sharedPreferences.remove("address");
+    await sharedPreferences.remove("latitude");
+    await sharedPreferences.remove("longitude");
+    await sharedPreferences.remove("token");
 
-    await firebaseAuth.signOut();
-    await googleSignIn.signOut();
-    await facebookAuth.logOut();
+    try {
+      await firebaseAuth.signOut();
+    } catch (_) {}
+    try {
+      await googleSignIn.signOut();
+    } catch (_) {}
+    try {
+      await facebookAuth.logOut();
+    } catch (_) {}
+
     _isSignedIn = false;
-
-    FirebaseAuth auth = FirebaseAuth.instance;
-    final user = auth.currentUser;
-    if (user != null) {}
-
     notifyListeners();
-    // clear all storage information
-    clearStoredData();
+    await clearStoredData();
   }
 
   Future clearStoredData() async {
     final SharedPreferences s = await SharedPreferences.getInstance();
     s.clear();
-    // await s.remove('name');
-    // await s.remove('email');
-    // await s.remove('image_url');
-    // await s.remove('uid');
-    // await s.remove('provider');
-    // notifyListeners();
   }
 }
 

@@ -43,7 +43,6 @@ class Data {
   String? approveDate;
   String? completeDate;
   String? cancelDate;
-  int? negoPrice;
 
   Data({
     this.id,
@@ -64,7 +63,6 @@ class Data {
     this.approveDate,
     this.completeDate,
     this.cancelDate,
-    this.negoPrice,
   });
 
   Data.fromJson(Map<String, dynamic> json) {
@@ -86,7 +84,6 @@ class Data {
     approveDate = json['approve_date'];
     completeDate = json['complete_date'];
     cancelDate = json['cancel_date'];
-    negoPrice = json['nego_price'];
   }
 
   Map<String, dynamic> toJson() {
@@ -109,7 +106,6 @@ class Data {
     data['approve_date'] = this.approveDate;
     data['complete_date'] = this.completeDate;
     data['cancel_date'] = this.cancelDate;
-    data['nego_price'] = this.negoPrice;
     return data;
   }
 }

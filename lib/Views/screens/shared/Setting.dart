@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -8,13 +8,14 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/screens/agreements/JebbyAbout.dart';
 import 'package:jebby/Views/screens/agreements/privacyPolicy.dart';
-import 'package:jebby/Views/screens/auth/createnewpassword.dart';
+import 'package:jebby/view_model/auth_view_model.dart';
 import 'package:jebby/view_model/onboarding_controller.dart';
+import 'package:jebby/utils/profile_image.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/Views/screens/profile/editprofile.dart';
 import 'package:jebby/Views/support/FAQs.dart';
 import 'package:jebby/Views/support/contactsupport.dart';
 import 'package:jebby/Views/widgets/earn_member_banner.dart';
-import 'package:jebby/res/color.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../Services/provider/sign_in_provider.dart';
@@ -23,7 +24,10 @@ import '../../../view_model/user_view_model.dart';
 import '../agreements/termsAndConditions.dart';
 
 class Settings extends StatefulWidget {
-  const Settings({Key? key}) : super(key: key);
+  /// When true (drawer push), shows a back button. Null/false for bottom nav tab.
+  final bool? showBackButton;
+
+  const Settings({Key? key, this.showBackButton}) : super(key: key);
 
   @override
   State<Settings> createState() => _SettingsState();
@@ -47,6 +51,7 @@ class _SettingsState extends State<Settings> {
     try {
       final response = await http.get(
         Uri.parse('${Url}/UserProfileGetById/${id}'),
+        headers: await ApiHeaders.json(),
       );
       var data = jsonDecode(response.body.toString());
       datalength = data["data"].length;
@@ -54,7 +59,9 @@ class _SettingsState extends State<Settings> {
       if (data["data"].length != 0) {
         if (mounted) {
           setState(() {
-            imagesapi = data["data"][0]["image"].toString();
+            imagesapi = ProfileImage.sanitizePath(
+              data["data"][0]["profile_image"]?.toString(),
+            );
             nameapi = data["data"][0]["name"].toString();
             emailapi = data["data"][0]["email"].toString();
             isLoadingImage = false;
@@ -88,7 +95,7 @@ class _SettingsState extends State<Settings> {
     }
   }
 
-  var imagesapi = "null";
+  var imagesapi = "";
   var nameapi = "null";
   var emailapi = "user email";
   var datalength;
@@ -117,6 +124,7 @@ class _SettingsState extends State<Settings> {
           if (usp.role != value.role.toString()) {
             usp.setRole(value.role.toString());
           }
+          await usp.getUser();
 
           await _loadVerificationStatus();
 
@@ -129,7 +137,7 @@ class _SettingsState extends State<Settings> {
 
   Future<void> _loadVerificationStatus() async {
     final prefs = await SharedPreferences.getInstance();
-    var verified = prefs.getBool('identity_verified') ?? false;
+    var verified = prefs.getBool('is_identity_verified') ?? false;
 
     final controller = ensureOnboardingController();
     if (controller.userId.isEmpty && id != null && id!.isNotEmpty) {
@@ -158,48 +166,55 @@ class _SettingsState extends State<Settings> {
   }
 
   String getText(usp, sp) {
-    if (usp.name == "null") {
-      if (sp.name.toString() == "null") {
-        return "user name";
-      } else if (sp.phoneNumber.toString() != "null") {
-        return sp.phoneNumber.toString();
-      } else {
-        return sp.name.toString();
-      }
-    } else {
-      if (usp.name.toString() == "") {
-        return usp.phoneNumber.toString();
-      } else {
-        return usp.name.toString();
-      }
+    final uspName = usp.name?.toString().trim() ?? '';
+    if (uspName.isNotEmpty) {
+      return uspName;
     }
+    final spName = sp.name?.toString().trim() ?? '';
+    if (spName.isNotEmpty) {
+      return spName;
+    }
+    final phone = sp.phoneNumber?.toString().trim() ?? '';
+    if (phone.isNotEmpty) {
+      return phone;
+    }
+    return "user name";
   }
 
   String _getEmailText(usp) {
-    if (usp.email.toString() == "null" ||
-        usp.email.toString().contains("Phone")) {
-      return usp.phoneNumber.toString();
-    }
-    return usp.email.toString();
+    return usp.email.toString().trim();
   }
 
   void _openChangePassword(usp) {
-    final ue = usp.email.toString();
+    if (context.read<AuthViewModel>().signUpLoading) return;
+
+    if (UserViewModel.isSocialAuthSource(usp.source)) {
+      showAppSnackbar(
+        'Change Password',
+        UserViewModel.socialAuthPasswordMessage(usp.source),
+      );
+      return;
+    }
+
+    final ue = usp.email.toString().trim();
     String? pwdEmail;
-    if (ue != 'null' && !ue.contains('Phone')) {
+    if (ue.isNotEmpty) {
       pwdEmail = ue;
     } else if (emailapi != 'user email' && emailapi.trim().isNotEmpty) {
       pwdEmail = emailapi.trim();
     }
     if (pwdEmail == null || pwdEmail.isEmpty) {
-      Get.snackbar(
+      showAppSnackbar(
         'Change Password',
         'Add or fix your email in Edit Profile before changing password.',
-        snackPosition: SnackPosition.BOTTOM,
       );
       return;
     }
-    Get.to(() => CreatePasswordScreen(email: pwdEmail));
+    context.read<AuthViewModel>().forgetPasswordApi(
+      {'email': pwdEmail},
+      context,
+      'forgot',
+    );
   }
 
   void _openVerification() {
@@ -208,11 +223,92 @@ class _SettingsState extends State<Settings> {
     controller.startOrResume();
   }
 
+  Future<void> _openAccountDeletionRequest(usp, sp) async {
+    if (context.read<AuthViewModel>().accountDeletionLoading) return;
+
+    final userRole = usp.role?.toString() ?? role ?? '';
+    if (userRole == 'Guest') {
+      showAppSnackbar(
+        'Account Deletion',
+        'Please sign in to request account deletion.',
+      );
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final contactNumber =
+        (usp.phoneNumber?.toString().trim().isNotEmpty == true
+                ? usp.phoneNumber.toString()
+                : prefs.getString('phoneNumber'))
+            ?.trim() ??
+        '';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Request account deletion?',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w700,
+              fontSize: 18,
+              color: _textPrimary,
+            ),
+          ),
+          content: Text(
+            'This submits a request for our team to review. Your account is not deleted immediately.',
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              color: _textSecondary,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  color: _textSecondary,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(
+                'Submit request',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.red.shade700,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    await context.read<AuthViewModel>().requestAccountDeletion(
+      context: context,
+      contactNumber: contactNumber,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final sp = context.watch<SignInProvider>();
     final usp = context.watch<UserViewModel>();
+    final auth = context.watch<AuthViewModel>();
     final isProvider = usp.role == "1" || role == "1";
+    final isSocialAccount = UserViewModel.isSocialAuthSource(usp.source);
     final bottomSafe = MediaQuery.paddingOf(context).bottom;
     // Clear homemain footer (64px bar + 22px spacing) plus breathing room.
     const footerClearance = 86.0;
@@ -227,7 +323,7 @@ class _SettingsState extends State<Settings> {
         centerTitle: true,
         automaticallyImplyLeading: false,
         leading:
-            isProvider && Navigator.of(context).canPop()
+            (widget.showBackButton ?? false)
                 ? InkWell(
                   onTap: () => Get.back(),
                   borderRadius: BorderRadius.circular(50),
@@ -264,11 +360,13 @@ class _SettingsState extends State<Settings> {
                 label: 'Edit Profile',
                 onTap: () => Get.to(() => EditProfile()),
               ),
-              _SettingsTileData(
-                icon: Icons.lock_outline,
-                label: 'Change Password',
-                onTap: () => _openChangePassword(usp),
-              ),
+              if (!isSocialAccount)
+                _SettingsTileData(
+                  icon: Icons.lock_outline,
+                  label: 'Change Password',
+                  isLoading: auth.signUpLoading,
+                  onTap: () => _openChangePassword(usp),
+                ),
               _SettingsTileData(
                 icon: Icons.verified_user_outlined,
                 label: 'Verification',
@@ -277,6 +375,13 @@ class _SettingsState extends State<Settings> {
                 trailingLabelColor: _verifiedGreen,
                 onTap: _openVerification,
               ),
+              if (usp.role != 'Guest' && role != 'Guest')
+                _SettingsTileData(
+                  icon: Icons.delete_outline,
+                  label: 'Request Account Deletion',
+                  isLoading: auth.accountDeletionLoading,
+                  onTap: () => _openAccountDeletionRequest(usp, sp),
+                ),
             ]),
             const SizedBox(height: 24),
             _buildSectionHeader('SUPPORT & INFO'),
@@ -330,54 +435,12 @@ class _SettingsState extends State<Settings> {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              isLoadingImage
-                  ? CircleAvatar(
-                    radius: 44,
-                    backgroundColor: Colors.grey[200],
-                    child: const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.0,
-                        color: AppColors.primaryColor,
-                      ),
-                    ),
-                  )
-                  : imagesapi != "null" && imagesapi.isNotEmpty
-                  ? CachedNetworkImage(
-                    imageUrl: "${Url}${imagesapi}",
-                    imageBuilder:
-                        (context, imageProvider) => CircleAvatar(
-                          radius: 44,
-                          backgroundImage: imageProvider,
-                        ),
-                    placeholder:
-                        (context, url) => CircleAvatar(
-                          radius: 44,
-                          backgroundColor: Colors.grey[200],
-                          child: const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.0,
-                              color: AppColors.primaryColor,
-                            ),
-                          ),
-                        ),
-                    errorWidget:
-                        (context, url, error) => CircleAvatar(
-                          radius: 44,
-                          backgroundImage: const AssetImage(
-                            "assets/slicing/blankuser.jpeg",
-                          ),
-                        ),
-                  )
-                  : const CircleAvatar(
-                    radius: 44,
-                    backgroundImage: AssetImage(
-                      "assets/slicing/blankuser.jpeg",
-                    ),
-                  ),
+              ProfileImage.circularAvatar(
+                radius: 44,
+                baseUrl: Url,
+                imagePath: imagesapi,
+                isLoading: isLoadingImage,
+              ),
               Positioned(
                 right: 0,
                 bottom: 0,
@@ -470,7 +533,8 @@ class _SettingsState extends State<Settings> {
                 label: item.label,
                 trailingLabel: item.trailingLabel,
                 trailingLabelColor: item.trailingLabelColor,
-                onTap: item.onTap,
+                isLoading: item.isLoading,
+                onTap: item.isLoading ? null : item.onTap,
               ),
               if (index < items.length - 1)
                 Divider(
@@ -492,6 +556,7 @@ class _SettingsTileData {
   final String label;
   final String? trailingLabel;
   final Color? trailingLabelColor;
+  final bool isLoading;
   final VoidCallback onTap;
 
   const _SettingsTileData({
@@ -500,6 +565,7 @@ class _SettingsTileData {
     required this.onTap,
     this.trailingLabel,
     this.trailingLabelColor,
+    this.isLoading = false,
   });
 }
 
@@ -508,7 +574,8 @@ class _SettingsTile extends StatelessWidget {
   final String label;
   final String? trailingLabel;
   final Color? trailingLabelColor;
-  final VoidCallback onTap;
+  final bool isLoading;
+  final VoidCallback? onTap;
 
   static const Color _primaryOrange = Color(0xFFFFB020);
   static const Color _iconBg = Color(0xFFFFF3E0);
@@ -517,59 +584,75 @@ class _SettingsTile extends StatelessWidget {
   const _SettingsTile({
     required this.icon,
     required this.label,
-    required this.onTap,
+    this.onTap,
     this.trailingLabel,
     this.trailingLabelColor,
+    this.isLoading = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final disabled = isLoading || onTap == null;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: disabled ? null : onTap,
         borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: _iconBg,
-                  borderRadius: BorderRadius.circular(10),
+        child: Opacity(
+          opacity: disabled ? 0.55 : 1,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _iconBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: _primaryOrange, size: 22),
                 ),
-                child: Icon(icon, color: _primaryOrange, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                    color: _textPrimary,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w400,
+                      color: _textPrimary,
+                    ),
                   ),
                 ),
-              ),
-              if (trailingLabel != null) ...[
-                Text(
-                  trailingLabel!,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: trailingLabelColor ?? _textPrimary,
+                if (trailingLabel != null) ...[
+                  Text(
+                    trailingLabel!,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: trailingLabelColor ?? _textPrimary,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
+                  const SizedBox(width: 8),
+                ],
+                if (isLoading)
+                  SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _primaryOrange,
+                    ),
+                  )
+                else
+                  Icon(
+                    Icons.chevron_right,
+                    color: Colors.grey.shade400,
+                    size: 22,
+                  ),
               ],
-              Icon(
-                Icons.chevron_right,
-                color: Colors.grey.shade400,
-                size: 22,
-              ),
-            ],
+            ),
           ),
         ),
       ),

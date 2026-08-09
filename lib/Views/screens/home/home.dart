@@ -71,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _normalizeOptionalText(String? value) {
     if (value == null) return null;
     final trimmed = value.trim();
-    if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') return null;
+    if (trimmed.isEmpty) return null;
     return trimmed;
   }
 
@@ -171,31 +171,31 @@ class _HomeScreenState extends State<HomeScreen> {
   void check() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
 
-    prefs.getBool('time') == false
-        ? notiTimer().timer?.cancel()
-        : notiTimer().timer =
-            prefs.getBool('time') == false
-                ? notiTimer().timer?.cancel()
-                : new Timer.periodic(Duration(seconds: 5), (_) {
-                  if (token == null ||
-                      token == "" ||
-                      role == "" ||
-                      role == null ||
-                      prefs.getBool('time') != true) {
-                    cancelTimer();
-                  } else {
-                    prefs.getBool('notifiction') == true
-                        ? getNotifications()
-                        : prefs.getBool('notifiction') == null
-                        ? getNotifications()
-                        : null;
-                  }
-                });
+    if (prefs.getBool('time') == false) {
+      cancelTimer();
+      return;
+    }
+
+    cancelTimer();
+    notiTimer().timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (token == null ||
+          token == "" ||
+          role == "" ||
+          role == null ||
+          prefs.getBool('time') != true) {
+        cancelTimer();
+      } else {
+        prefs.getBool('notifiction') == true
+            ? getNotifications()
+            : prefs.getBool('notifiction') == null
+            ? getNotifications()
+            : null;
+      }
+    });
   }
 
   cancelTimer() {
-    notiTimer().timer.cancel();
-    notiTimer().timer = null;
+    notiTimer().cancelTimer();
   }
 
   void dispose() {
@@ -342,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (detailItem == null) continue;
 
         final detailText = _formatLocationText(
-          null,
+          detailItem.address,
           detailItem.latitude?.toString(),
           detailItem.longitude?.toString(),
         );
@@ -364,120 +364,12 @@ class _HomeScreenState extends State<HomeScreen> {
       width: double.infinity,
       child: Scaffold(
         key: _key,
-        drawer: DrawerScreen(),
+        drawer: Consumer<UserViewModel>(
+          builder: (context, usp, _) => DrawerScreen(
+            key: ValueKey('drawer-guest-${usp.isGuestUser}-${usp.role}'),
+          ),
+        ),
 
-        // appBar: AppBar(
-        //   backgroundColor: Colors.transparent,
-        //   elevation: 0,
-        //   centerTitle: true,
-        //   title: Text(
-        //     'Home',
-        //     style: TextStyle(
-        //       fontWeight: FontWeight.bold,
-        //       color: Colors.black,
-        //       fontSize: 19,
-        //     ),
-        //   ),
-        //   leading: InkWell(
-        //     onTap: () {
-        //       _key.currentState!.openDrawer();
-        //     },
-        //     borderRadius: BorderRadius.circular(50),
-        //     child: Padding(
-        //       padding: const EdgeInsets.all(17.0),
-        //       child: Container(
-        //         child: Image.asset('assets/slicing/hamburger.png'),
-        //       ),
-        //     ),
-        //   ),
-        //   actions: [
-        //     Stack(
-        //       children: [
-        //         Visibility(
-        //           visible: role != null && role != "Guest",
-        //           child: GestureDetector(
-        //             onTap: () {
-        //               seenNotification();
-        //               Get.to(() => NotificationsScreen());
-        //             },
-        //             child: Padding(
-        //               padding: const EdgeInsets.only(
-        //                 top: 18.0,
-        //                 bottom: 18.0,
-        //                 right: 7,
-        //               ),
-        //               child: Icon(
-        //                 Icons.notifications_none,
-        //                 color: Colors.black,
-        //               ),
-        //             ),
-        //           ),
-        //         ),
-        //         isLoading1
-        //             ? SizedBox()
-        //             : ApiRepository.shared.getNotificationModelList!.unseen
-        //                     .toString() ==
-        //                 "0"
-        //             ? SizedBox()
-        //             : Visibility(
-        //               visible: role != null && role != "Guest",
-        //               child: Positioned(
-        //                 top: 4,
-        //                 right: 0,
-        //                 child: Container(
-        //                   padding: EdgeInsets.all(2),
-        //                   decoration: BoxDecoration(
-        //                     color: kprimaryColor,
-        //                     borderRadius: BorderRadius.circular(10),
-        //                   ),
-        //                   constraints: BoxConstraints(
-        //                     minWidth: 16,
-        //                     minHeight: 16,
-        //                   ),
-        //                   child: Text(
-        //                     isLoading1
-        //                         ? ""
-        //                         : ApiRepository
-        //                                 .shared
-        //                                 .getNotificationModelList!
-        //                                 .unseen
-        //                                 .toString() ==
-        //                             "0"
-        //                         ? ""
-        //                         : ApiRepository
-        //                             .shared
-        //                             .getNotificationModelList!
-        //                             .unseen
-        //                             .toString(),
-        //                     style: TextStyle(color: Colors.white, fontSize: 10),
-        //                     textAlign: TextAlign.center,
-        //                   ),
-        //                 ),
-        //               ),
-        //             ),
-        //       ],
-        //     ),
-        //     Visibility(
-        //       visible: role != null && role != "Guest",
-        //       child: GestureDetector(
-        //         onTap: () {
-        //           Get.to(() => MyProfileScreen());
-        //         },
-        //         child: Padding(
-        //           padding: const EdgeInsets.symmetric(
-        //             horizontal: 19.0,
-        //             vertical: 18.0,
-        //           ),
-        //           child: Icon(
-        //             Icons.person_outline,
-        //             color: Colors.black,
-        //             size: 25,
-        //           ),
-        //         ),
-        //       ),
-        //     ),
-        //   ],
-        // ),
         appBar: PreferredSize(
           preferredSize: const Size.fromHeight(220),
           child: Builder(
@@ -511,7 +403,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               },
                               bg: Colors.transparent,
                               image: const AssetImage(
-                                'assets/slicing/mingcute_menu-fill.png',
+                                'assets/images/mingcute_menu-fill.png',
                               ),
                             ),
 
@@ -522,7 +414,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Welcome Back, ${fullname ?? ''}',
+                                    fullname ?? 'Welcome to Jebby',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -561,7 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       Get.to(() => NotificationsScreen());
                                     },
                                     image: const AssetImage(
-                                      'assets/slicing/notificationnew.png',
+                                      'assets/images/notificationnew.png',
                                     ),
                                   ),
                                 ),
@@ -574,7 +466,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       Get.to(() => MyProfileScreen());
                                     },
                                     image: const AssetImage(
-                                      'assets/slicing/personnew.png',
+                                      'assets/images/personnew.png',
                                     ),
                                   ),
                                 ),
@@ -625,7 +517,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           maxLines: 1,
                         ),
                       ),
-                      // SizedBox(
                       //   width: 120,
                       // ),
                     ],
@@ -657,13 +548,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               .getFeaturedProductsModelList!
                               .data![index];
                       var price = data.price;
-                      var reviews = data.isReview.toString();
+                      var reviews = (data.length ?? '0').toString();
                       var name = data.name.toString();
                       var id = data.id.toString();
                       var specs = data.specifications.toString();
-                      var desc = data.serviceAgreements.toString();
+                      var desc = data.description.toString();
                       var userId = data.userId.toString();
-                      var msg = data.isMessage;
                       var image = data.image.toString();
                       var stars = data.stars.toString();
                       var delivery_charges = data.delivery_charges.toString();
@@ -684,7 +574,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           specs: specs,
                           userId: userId,
                           desc: desc,
-                          msg: msg,
                           delivery_charges: delivery_charges,
                         ),
                       );
@@ -847,11 +736,6 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Background image
-              // Image(
-              //   image: imageProvider,
-              //   fit: BoxFit.cover,
-              // ),
               CachedNetworkImage(
                 imageUrl: '$img',
                 fit: BoxFit.cover,
@@ -953,7 +837,6 @@ class _HomeScreenState extends State<HomeScreen> {
     specs,
     userId,
     desc,
-    msg,
     delivery_charges,
   }) {
     double res_height = MediaQuery.of(context).size.height;
@@ -971,7 +854,6 @@ class _HomeScreenState extends State<HomeScreen> {
             specs,
             userId,
             desc,
-            msg,
             delivery_charges,
           ),
         );
@@ -1041,7 +923,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         child: Row(
                           children: [
-                            Image.asset('assets/newpacks/star.png',width: 25,height: 25,),
+                            Image.asset('assets/images/star.png',width: 25,height: 25,),
                             SizedBox(width: 6),
                             Text(
                               "$rt",
@@ -1104,25 +986,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          // TODO: when location is handled in list your product screen, uncomment the following code with fixing location text function to show address not lat lng
-                          // SizedBox(height: 8),
-                          // Row(
-                          //   children: [
-                          //     Icon(
-                          //       Icons.location_on,
-                          //       size: 16,
-                          //       color: Colors.white70,
-                          //     ),
-                          //     SizedBox(width: 4),
-                          //     Text(
-                          //       "${locationText ?? 'Location unavailable'}",
-                          //       style: TextStyle(
-                          //         color: Colors.white70,
-                          //         fontSize: 14,
-                          //       ),
-                          //     ),
-                          //   ],
-                          // ),
                         ],
                       ),
                     ),
@@ -1130,34 +993,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            // SizedBox(height: res_height * 0.005),
-            // Container(
-            //   child: Column(
-            //     crossAxisAlignment: CrossAxisAlignment.center,
-            //     mainAxisAlignment: MainAxisAlignment.center,
-            //     children: [
-            //       Text('$tx', style: TextStyle(fontSize: 15)),
-            //       SizedBox(height: res_height * 0.003),
-            //       Text(
-            //         '${dx.toString()} \$',
-            //         style: TextStyle(fontSize: 13),
-            //         textAlign: TextAlign.left,
-            //       ),
-            //       Row(
-            //         crossAxisAlignment: CrossAxisAlignment.center,
-            //         mainAxisAlignment: MainAxisAlignment.center,
-            //         children: [
-            //           Text('$rt ', style: TextStyle(fontSize: 11)),
-            //           Text(
-            //             '$rv',
-            //             style: TextStyle(fontSize: 11, color: Colors.grey),
-            //           ),
-            //         ],
-            //       ),
-            //       SizedBox(height: res_height * 0.001),
-            //     ],
-            //   ),
-            // ),
             SizedBox(height: res_height * 0.001),
           ],
         ),
@@ -1165,7 +1000,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /////////////////////////////////
   Future<CategoryList> getCategoryList() async {
     dynamic response = await http.get(Uri.parse(AppUrl.categoryGetUrl));
     if (response.statusCode == 200) {
@@ -1174,112 +1008,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       throw Exception("Error");
     }
-  }
-}
-
-class CurvedHeaderAppBar extends StatelessWidget
-    implements PreferredSizeWidget {
-  const CurvedHeaderAppBar({super.key});
-
-  static const _radius = 26.0;
-
-  @override
-  Size get preferredSize => const Size.fromHeight(200);
-
-  @override
-  Widget build(BuildContext context) {
-    final top = MediaQuery.of(context).padding.top; // status bar / notch
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light, // white status-bar content
-      child: Material(
-        color: Colors.transparent,
-        child: Stack(
-          children: [
-            Container(
-              height: preferredSize.height,
-              decoration: const BoxDecoration(
-                color: AppColors.primaryColor,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(_radius),
-                  bottomRight: Radius.circular(_radius),
-                ),
-              ),
-              padding: EdgeInsets.fromLTRB(16, top + 12, 16, 18),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Left hamburger
-                  _RoundIconButton(
-                    onTap: () {},
-                    bg: Colors.transparent,
-                    image: const AssetImage(
-                      'assets/slicing/mingcute_menu-fill.png',
-                    ),
-                  ),
-
-                  const SizedBox(width: 12),
-                  // Title + address
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'Welcome Back, John',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            height: 1.1,
-                          ),
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          '123 Maple Street, CA 1200',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Right round actions
-                  Row(
-                    children: [
-                      _CircleAction(
-                        onTap: () {},
-                        image: const AssetImage(
-                          'assets/slicing/notificationnew.png',
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      _CircleAction(
-                        onTap: () {},
-                        image: const AssetImage('assets/slicing/personnew.png'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            // Big rounded search field overlapping the bottom curve
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 16, // hangs slightly below the header
-              child: _SearchField(),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
@@ -1371,7 +1099,6 @@ class _SearchField extends StatelessWidget {
         decoration: InputDecoration(
           hintText: 'Search by Product Name',
 
-          // prefixIcon: const Icon(Icons.search),
           prefixIcon: InkWell(
             onTap: () {
               if (searchController.text.isNotEmpty) {
@@ -1386,7 +1113,7 @@ class _SearchField extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(12.0),
               child: Image.asset(
-                'assets/slicing/searchnew.png',
+                'assets/images/searchnew.png',
                 width: 20,
                 height: 20,
                 fit: BoxFit.contain,

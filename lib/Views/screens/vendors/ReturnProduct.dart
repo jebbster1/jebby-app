@@ -6,9 +6,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
 import 'package:intl/intl.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/res/color.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/view_model/getTax_modal.dart';
 
 class ProductReturnScreen extends StatefulWidget {
@@ -35,7 +37,7 @@ class _ProductReturnScreenState extends State<ProductReturnScreen> {
       if (!mounted) return;
       final raw = data['data'];
       final list = raw is List ? List<dynamic>.from(raw) : <dynamic>[];
-      final filtered = list.where((e) => e['retrurn'] != 0).toList();
+      final filtered = list.where((e) => e['return_status'] != 0).toList();
       setState(() {
         array = filtered;
         isLoading = false;
@@ -55,7 +57,7 @@ class _ProductReturnScreenState extends State<ProductReturnScreen> {
 
   String _imageUrl(dynamic path) {
     final p = path?.toString().trim() ?? '';
-    if (p.isEmpty || p == 'null') return '';
+    if (p.isEmpty) return '';
     if (p.toLowerCase().startsWith('http')) return p;
     final base = AppUrl.baseUrlM;
     if (base.endsWith('/')) return base + (p.startsWith('/') ? p.substring(1) : p);
@@ -74,7 +76,7 @@ class _ProductReturnScreenState extends State<ProductReturnScreen> {
   }
 
   bool _canConfirmReceipt(dynamic item) {
-    final r = item['retrurn'];
+    final r = item['return_status'];
     if (r == null) return false;
     if (r is int) return r == 1;
     return r.toString() == '1';
@@ -89,7 +91,7 @@ class _ProductReturnScreenState extends State<ProductReturnScreen> {
     try {
       final response = await http.post(
         Uri.parse(seenMessageUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: await ApiHeaders.json(),
         body: json.encode(body),
       );
       final responseBody = jsonDecode(response.body);
@@ -97,23 +99,11 @@ class _ProductReturnScreenState extends State<ProductReturnScreen> {
       if (!mounted) return;
 
       if (responseBody['message'].toString() == 'product has been received') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Product has been received',
-              style: GoogleFonts.inter(),
-            ),
-          ),
-        );
+        showAppSuccessSnackbar('Product has been received.');
         await _loadData();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              responseBody['message']?.toString() ?? 'Something went wrong',
-              style: GoogleFonts.inter(),
-            ),
-          ),
+        showAppErrorSnackbar(
+          responseBody['message']?.toString() ?? 'Something went wrong',
         );
         setState(() {
           isLoading = false;
@@ -124,13 +114,8 @@ class _ProductReturnScreenState extends State<ProductReturnScreen> {
         setState(() {
           isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Something went wrong. Please check your internet connection.',
-              style: GoogleFonts.inter(),
-            ),
-          ),
+        showAppErrorSnackbar(
+          'Something went wrong. Please check your internet connection.',
         );
       }
     }

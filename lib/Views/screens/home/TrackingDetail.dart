@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/res/color.dart';
 
+import 'package:jebby/utils/profile_image.dart';
 import '../../../view_model/apiServices.dart';
 
 class TrackingDetailScreen extends StatefulWidget {
@@ -57,12 +58,13 @@ class _TrackingDetailScreenState extends State<TrackingDetailScreen> {
           setState(() {
             userError = false;
             userEmpty = false;
-            userImage =
-                ApiRepository.shared.getUserCredentialModelList!.data![0].image.toString();
+            userImage = ProfileImage.sanitizePath(
+              ApiRepository.shared.getUserCredentialModelList!.data![0].profileImage?.toString(),
+            );
             userName =
                 ApiRepository.shared.getUserCredentialModelList!.data![0].name.toString();
             userNumber =
-                ApiRepository.shared.getUserCredentialModelList!.data![0].number.toString();
+                ApiRepository.shared.getUserCredentialModelList!.data![0].phoneNumber.toString();
             userAddress =
                 ApiRepository.shared.getUserCredentialModelList!.data![0].address.toString();
           });
@@ -86,7 +88,7 @@ class _TrackingDetailScreenState extends State<TrackingDetailScreen> {
   String? _formatDisplayDate(String? raw) {
     if (raw == null) return null;
     final t = raw.trim();
-    if (t.isEmpty || t == '0' || t == 'null') return null;
+    if (t.isEmpty || t == '0') return null;
     try {
       return DateFormat('d MMM yyyy').format(DateTime.parse(t));
     } catch (_) {
@@ -97,7 +99,7 @@ class _TrackingDetailScreenState extends State<TrackingDetailScreen> {
   String? _formatShortDate(String? raw) {
     if (raw == null) return null;
     final t = raw.trim();
-    if (t.isEmpty || t == '0' || t == 'null') return null;
+    if (t.isEmpty || t == '0') return null;
     try {
       return DateFormat('d MMM yyyy').format(DateTime.parse(t));
     } catch (_) {
@@ -109,23 +111,18 @@ class _TrackingDetailScreenState extends State<TrackingDetailScreen> {
   String? _placingDateLine(String? raw) {
     if (raw == null) return null;
     final t = raw.trim();
-    if (t.isEmpty || t == '0' || t == 'null') return null;
+    if (t.isEmpty || t == '0') return null;
     return t;
   }
 
   String _rentSummary() {
     final d = widget.date?.toString() ?? '';
-    if (d.isEmpty || d == 'null') return 'Rent start date not available';
+    if (d.isEmpty) return 'Rent start date not available';
     return 'Rent starts ${_formatDisplayDate(d) ?? d}';
   }
 
   String _vendorImageUrl() {
-    final p = userImage.trim();
-    if (p.isEmpty) return '';
-    if (p.toLowerCase().startsWith('http')) return p;
-    final base = AppUrl.baseUrlM;
-    if (base.endsWith('/')) return base + (p.startsWith('/') ? p.substring(1) : p);
-    return '$base/${p.startsWith('/') ? p.substring(1) : p}';
+    return ProfileImage.resolveUrl(AppUrl.baseUrlM, userImage) ?? '';
   }
 
   @override
@@ -391,7 +388,7 @@ class _TrackingDetailScreenState extends State<TrackingDetailScreen> {
           [
             _TrackNode(
               title: 'Order is pending',
-              date: c.isNotEmpty && c != '0' && c != 'null' ? _placingDateLine(c) : null,
+              date: c.isNotEmpty && c != '0' ? _placingDateLine(c) : null,
             ),
           ],
         );
@@ -404,7 +401,7 @@ class _TrackingDetailScreenState extends State<TrackingDetailScreen> {
             ),
             _TrackNode(
               title: 'Approved',
-              date: ap != '0' && ap.isNotEmpty && ap != 'null' ? _formatShortDate(ap) : null,
+              date: ap != '0' && ap.isNotEmpty ? _formatShortDate(ap) : null,
             ),
           ],
         );
@@ -417,11 +414,11 @@ class _TrackingDetailScreenState extends State<TrackingDetailScreen> {
             ),
             _TrackNode(
               title: 'Approved',
-              date: ap != '0' && ap.isNotEmpty && ap != 'null' ? _formatShortDate(ap) : null,
+              date: ap != '0' && ap.isNotEmpty ? _formatShortDate(ap) : null,
             ),
             _TrackNode(
               title: 'Shipped',
-              date: comp != '0' && comp.isNotEmpty && comp != 'null' ? _formatShortDate(comp) : null,
+              date: comp != '0' && comp.isNotEmpty ? _formatShortDate(comp) : null,
             ),
           ],
         );

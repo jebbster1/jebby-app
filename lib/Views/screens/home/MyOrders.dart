@@ -105,7 +105,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
   }
 
   String _formatExpectedArrival(String? raw) {
-    if (raw == null || raw.isEmpty || raw == 'null') return '—';
+    if (raw == null || raw.isEmpty) return '—';
     try {
       return DateFormat('d/M/yyyy').format(DateTime.parse(raw));
     } catch (_) {
@@ -140,7 +140,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
 
   String _imageUrl(String? path) {
     final p = path?.trim() ?? '';
-    if (p.isEmpty || p == 'null') return '';
+    if (p.isEmpty) return '';
     if (p.toLowerCase().startsWith('http')) return p;
     final base = AppUrl.baseUrlM.endsWith('/') ? AppUrl.baseUrlM : '${AppUrl.baseUrlM}/';
     final rel = p.startsWith('/') ? p.substring(1) : p;
@@ -162,8 +162,6 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
   }
 
   void _openReorder(user_orders.Data data) {
-    final nego = data.negoPrice ?? 0;
-    if (nego != 0) return;
     Get.to(
       () => OrderConfirmationScreen(
         image: data.productImage.toString(),
@@ -345,9 +343,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final data = items[index];
-        final nego = data.negoPrice ?? 0;
-        final priceStr =
-            (nego == 0 ? data.totalPrice : data.negoPrice)?.toString() ?? '0';
+        final priceStr = data.totalPrice?.toString() ?? '0';
         return _RenterOrderCard(
           name: data.productName?.toString() ?? '—',
           price: priceStr,
@@ -355,7 +351,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
           statusLabel: _statusBadgeLabel(data.status),
           expectedArrival: _formatExpectedArrival(data.originalReturn),
           imageUrl: _imageUrl(data.productImage?.toString()),
-          canReorder: nego == 0,
+          canReorder: true,
           onTrack: () => _openTrack(data),
           onReorder: () => _openReorder(data),
         );
@@ -560,7 +556,7 @@ class _RenterOrderCard extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        canReorder ? 'Reorder' : 'Negotiated',
+                        'Reorder',
                         style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
                       ),
                     ),

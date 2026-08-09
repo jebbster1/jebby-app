@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart';
 import 'package:jebby/data/app_excaptions.dart';
 import 'package:jebby/data/network/BaseApiServices.dart';
+import 'package:jebby/utils/api_headers.dart';
 import 'package:http/http.dart' as http;
 
 class NetworkApiService extends BaseApiServices {
@@ -11,7 +12,7 @@ class NetworkApiService extends BaseApiServices {
     dynamic responseJson;
     try {
       final response = await http
-          .get(Uri.parse(url))
+          .get(Uri.parse(url), headers: await ApiHeaders.json())
           .timeout(const Duration(seconds: 10));
       responseJson = returnResponse(response);
     } on SocketException {
@@ -25,9 +26,13 @@ class NetworkApiService extends BaseApiServices {
   Future getPostApiResponse(String url, dynamic data) async {
     dynamic responseJson;
     try {
+      final headers = await ApiHeaders.json();
+      final body = data is Map || data is List ? jsonEncode(data) : data;
+
       Response response = await post(
         Uri.parse(url),
-        body: data,
+        body: body,
+        headers: headers,
       ).timeout(Duration(seconds: 10));
 
       responseJson = returnResponse(response);
@@ -45,6 +50,9 @@ class NetworkApiService extends BaseApiServices {
         return responseJson;
       case 400:
         throw BadRequestException(response.body.toString());
+      case 401:
+      case 403:
+        throw UnauthorisedException(response.body.toString());
       case 500:
       case 404:
         throw UnauthorisedException(response.body.toString());

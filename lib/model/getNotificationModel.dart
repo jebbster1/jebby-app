@@ -36,10 +36,6 @@ class Data {
   int? seen;
   int? userId;
   int? productId;
-  int? price;
-  int? status;
-  int? negoId;
-  int? seen_one;
 
   Data({
     this.id,
@@ -50,10 +46,6 @@ class Data {
     this.seen,
     this.userId,
     this.productId,
-    this.price,
-    this.status,
-    this.negoId,
-    this.seen_one,
   });
 
   Data.fromJson(Map<String, dynamic> json) {
@@ -65,10 +57,6 @@ class Data {
     seen = json['seen'];
     userId = json['user_id'];
     productId = json['product_id'];
-    price = json['price'];
-    status = json['status'];
-    negoId = json['nego_id'];
-    seen_one = json['seen_one'];
   }
 
   Map<String, dynamic> toJson() {
@@ -81,10 +69,6 @@ class Data {
     data['seen'] = this.seen;
     data['user_id'] = this.userId;
     data['product_id'] = this.productId;
-    data['price'] = this.price;
-    data['status'] = this.status;
-    data['nego_id'] = this.negoId;
-    data['seen_one'] = this.seen_one;
     return data;
   }
 }

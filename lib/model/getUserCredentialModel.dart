@@ -29,32 +29,30 @@ class GetUserCredentialModel {
 
 class Data {
   var id;
-  String? image;
+  String? profileImage;
   String? name;
   String? email;
-  String? number;
+  String? phoneNumber;
   String? address;
   var userId;
   var latitude;
   var longitude;
-  String? backImage;
-  String? paypalEmail;
+  String? coverImage;
   String? stripeEmail;
   String? stripeAccountType;
   String? accountId;
 
   Data({
     this.id,
-    this.image,
+    this.profileImage,
     this.name,
     this.email,
-    this.number,
+    this.phoneNumber,
     this.address,
     this.userId,
     this.latitude,
     this.longitude,
-    this.backImage,
-    this.paypalEmail,
+    this.coverImage,
     this.stripeEmail,
     this.stripeAccountType,
     this.accountId,
@@ -62,16 +60,15 @@ class Data {
 
   Data.fromJson(Map<String, dynamic> json) {
     id = json['id'];
-    image = json['image'];
+    profileImage = json['profile_image'];
     name = json['name'];
     email = json['email'];
-    number = json['number'];
+    phoneNumber = json['phone_number'];
     address = json['address'];
     userId = json['user_id'];
     latitude = json['latitude'];
     longitude = json['longitude'];
-    backImage = json['back_image'];
-    paypalEmail = json['paypal_email'];
+    coverImage = json['cover_image'];
     stripeEmail = json['stripe_email'];
     stripeAccountType = json['stripe_account_type'];
     accountId = json['account_id'];
@@ -80,16 +77,15 @@ class Data {
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = new Map<String, dynamic>();
     data['id'] = this.id;
-    data['image'] = this.image;
+    data['profile_image'] = this.profileImage;
     data['name'] = this.name;
     data['email'] = this.email;
-    data['number'] = this.number;
+    data['phone_number'] = this.phoneNumber;
     data['address'] = this.address;
     data['user_id'] = this.userId;
     data['latitude'] = this.latitude;
     data['longitude'] = this.longitude;
-    data['back_image'] = this.backImage;
-    data['paypal_email'] = this.paypalEmail;
+    data['cover_image'] = this.coverImage;
     data['stripe_email'] = this.stripeEmail;
     data['stripe_account_type'] = this.stripeAccountType;
     data['account_id'] = this.accountId;

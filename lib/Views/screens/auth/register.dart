@@ -10,9 +10,7 @@ import '../../../res/color.dart';
 import '../../../view_model/auth_view_model.dart';
 
 class RegisterScreen extends StatefulWidget {
-  final bool isGuestUserFlow;
-  const RegisterScreen({Key? key, this.isGuestUserFlow = false})
-    : super(key: key);
+  const RegisterScreen({Key? key}) : super(key: key);
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -41,7 +39,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   ]);
 
   static final RegExp _emailPattern = RegExp(
-    r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.(com)",
+    r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
   );
 
   @override
@@ -112,7 +110,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final fullName = '$firstName $lastName'.trim();
 
     Map data = {
-      "full_name": fullName,
+      "name": fullName,
       "email": _emailController.text.toString(),
       "password": _passwordController.text.toString(),
       "source": "simple",
@@ -121,7 +119,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     authViewMode.signUpApi(
       data,
       context,
-      isFromGuestFlow: widget.isGuestUserFlow,
     );
   }
 
@@ -168,20 +165,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Column(
               children: [
-                // SizedBox(
-                //   height: res_height * 0.175,
-                // ),
                 Container(
                   width: res_width * 0.9,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Center(
-                      //   child: Image.asset(
-                      //     "assets/slicing/logo.png",
-                      //     width: 200,
-                      //   ),
-                      // ),
                       Text(
                         'Create account!',
                         style: GoogleFonts.inter(
@@ -201,111 +189,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ],
                   ),
                 ),
-                // SizedBox(
-                //   height: res_height * 0.05,
-                // ),
-                // Row(
-                //   children: [
-                //     // GestureDetector(
-                //     //   onTap: () {
-                //     //     setState(() {
-                //     //       onlinepay = false;
-                //     //       if (onlinepay == false) {
-                //     //         registerFor = "1";
-                //     //       }
-                //     //       // cod = false;
-                //     //     });
-                //     //   },
-                //     //   child: Container(
-                //     //     height: 19,
-                //     //     width: 19,
-                //     //     decoration: BoxDecoration(
-                //     //         shape: BoxShape.circle, border: Border.all(color: onlinepay == false ? Color(0xff303030) : Colors.black, width: 3)),
-                //     //     child: Icon(
-                //     //       Icons.circle_rounded,
-                //     //       color: onlinepay == false ? Color(0xff303030) : Colors.white,
-                //     //       size: 13,
-                //     //     ),
-                //     //   ),
-                //     // ),
-                //     Radio(
-                //         activeColor: Colors.black,
-                //         value: 0,
-                //         groupValue: _value,
-                //         onChanged: (value) {
-                //           setState(() {
-                //             _value = int.parse(value.toString());
-                //           }); //selected value
-                //         }),
 
-                //     Text(
-                //       "User",
-                //       style: TextStyle(fontSize: 15, color: Colors.black, fontFamily: "Inter, Regular"),
-                //     ),
-                //     SizedBox(
-                //       width: 20,
-                //     ),
-                //     // GestureDetector(
-                //     //   onTap: () {
-                //     //     setState(() {
-                //     //       onlinepay = true;
-                //     //       if (onlinepay == false) {
-                //     //         _value = 0;
-                //     //       }
-                //     //       // cod = true;
-                //     //     });
-                //     //   },
-                //     //   child: Container(
-                //     //     height: 19,
-                //     //     width: 19,
-                //     //     decoration: BoxDecoration(
-                //     //         shape: BoxShape.circle, border: Border.all(color: onlinepay == true ? Color(0xff303030) : Colors.black, width: 3)),
-                //     //     child: Icon(
-                //     //       Icons.circle_rounded,
-                //     //       color: onlinepay == true ? Color(0xff303030) : Colors.white,
-                //     //       size: 13,
-                //     //     ),
-                //     //   ),
-                //     // ),
-                //     Radio(
-                //         value: 1,
-                //         activeColor: Colors.black,
-                //         groupValue: _value,
-                //         onChanged: (value) {
-                //           setState(() {
-                //             _value = int.parse(value.toString());
-                //           }); //selected value
-                //         }),
 
-                //     Text(
-                //       "Provider",
-                //       // "Vendor",
-                //       style: TextStyle(fontSize: 15, color: Colors.black, fontFamily: "Inter, Regular"),
-                //     ),
-                //   ],
-                // ),
 
-                // Row(
-                //   children: [
-                //     Icon(Icons.circle_notifications_outlined),
-                //     SizedBox(
-                //       width: res_width * 0.01,
-                //     ),
-                //     Container(
-                //       child: Text("User"),
-                //     ),
-                //     SizedBox(
-                //       width: res_width * 0.05,
-                //     ),
-                //     Icon(Icons.circle_notifications_outlined),
-                //     SizedBox(
-                //       width: res_width * 0.01,
-                //     ),
-                //     Container(
-                //       child: Text("Vender"),
-                //     ),
-                //   ],
-                // ),
                 SizedBox(height: res_height * 0.03),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -424,10 +310,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Text('Email'),
-                    // SizedBox(
-                    //   height: res_height * 0.01,
-                    // ),
                     Text(
                       'Email',
                       style: GoogleFonts.inter(
@@ -444,12 +326,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       child: TextFormField(
                         controller: _emailController,
                         autocorrect: false,
-                        // controller: userEmailController,
                         validator: (text) {
-                          if (text == null ||
-                              text.isEmpty ||
-                              !text.contains("@")) {
-                            return 'Enter correct email';
+                          final value = text?.trim() ?? '';
+                          if (value.isEmpty) {
+                            return 'Enter your email';
+                          }
+                          if (!_emailPattern.hasMatch(value)) {
+                            return 'Enter a valid email';
                           }
                           return null;
                         },
@@ -458,7 +341,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                         decoration: InputDecoration(
-                      //    prefixIcon: Icon(Icons.email, color: darkBlue),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(15.0),
                           ),
@@ -496,10 +378,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Text('Password'),
-                    // SizedBox(
-                    //   height: res_height * 0.01,
-                    // ),
                     Text(
                       'Password',
                       style: GoogleFonts.inter(
@@ -523,7 +401,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                         decoration: InputDecoration(
-                         // prefixIcon: Icon(Icons.lock, color: darkBlue),
                           suffixIcon: InkWell(
                             onTap: () {
                               setState(() {
@@ -620,23 +497,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Text('Confirm Password'),
-                    // SizedBox(
-                    //   height: res_height * 0.01,
-                    // ),
                     Container(
                       width: res_width * 0.9,
                       child: TextFormField(
                         obscureText: obscureText1,
                         controller: _confirmpasswordController,
                         autocorrect: false,
-                        // obscureText: true,
-                        // controller: userEmailController,
                         validator: (text) {
-                          if (text == null ||
-                              text.isEmpty ||
-                              !text.contains("@")) {
-                            return 'Enter correct email';
+                          if (text == null || text.isEmpty) {
+                            return 'Confirm your password';
+                          }
+                          if (text != _passwordController.text) {
+                            return 'Passwords do not match';
                           }
                           return null;
                         },
@@ -645,7 +517,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                         decoration: InputDecoration(
-                       //   prefixIcon: Icon(Icons.lock, color: darkBlue),
                           suffixIcon: InkWell(
                             onTap: () {
                               setState(() {

@@ -1,15 +1,22 @@
 import 'package:jebby/data/network/BaseApiServices.dart';
 import 'package:jebby/data/network/NetworkApiService.dart';
 import 'package:jebby/res/app_url.dart';
+import 'package:jebby/utils/device_platform.dart';
 
 class AuthRepository {
   BaseApiServices _apiServices = NetworkApiService();
+
+  Map<String, dynamic> _withPlatform(dynamic data) {
+    final map = Map<String, dynamic>.from(data as Map);
+    map['platform'] = clientPlatform();
+    return map;
+  }
 
   Future<dynamic> loginApi(dynamic data) async {
     try {
       dynamic response = await _apiServices.getPostApiResponse(
         AppUrl.loginApiEndPointM,
-        data,
+        _withPlatform(data),
       );
       return response;
     } catch (e) {
@@ -21,7 +28,7 @@ class AuthRepository {
     try {
       dynamic response = await _apiServices.getPostApiResponse(
         AppUrl.registerApiEndPointM,
-        data,
+        _withPlatform(data),
       );
       return response;
     } catch (e) {
@@ -33,7 +40,7 @@ class AuthRepository {
     try {
       dynamic response = await _apiServices.getPostApiResponse(
         AppUrl.OTPApiEndPoint,
-        data,
+        _withPlatform(data),
       );
       return response;
     } catch (e) {
@@ -41,12 +48,23 @@ class AuthRepository {
     }
   }
 
-  ///////////////////////Social SignIn //////////////////////////////////////
+  Future<dynamic> resendRegistrationOtpApi(dynamic data) async {
+    try {
+      dynamic response = await _apiServices.getPostApiResponse(
+        AppUrl.resendRegistrationOtpEndPoint,
+        _withPlatform(data),
+      );
+      return response;
+    } catch (e) {
+      throw e;
+    }
+  }
+
   Future<dynamic> signUpApiWithSocial(dynamic data) async {
     try {
       dynamic response = await _apiServices.getPostApiResponse(
         AppUrl.registerApiEndPointM,
-        data,
+        _withPlatform(data),
       );
       return response;
     } catch (e) {
@@ -54,20 +72,6 @@ class AuthRepository {
     }
   }
 
-  ///////////////////////Social SignIn //////////////////////////////////////
-  Future<dynamic> signUpApiWithGuest(dynamic data) async {
-    try {
-      dynamic response = await _apiServices.getPostApiResponse(
-        AppUrl.registerApiEndPointM,
-        data,
-      );
-      return response;
-    } catch (e) {
-      throw e;
-    }
-  }
-
-  //forgetPassword
   Future<dynamic> forgetPasswordApi(dynamic data) async {
     try {
       dynamic response = await _apiServices.getPostApiResponse(
@@ -117,10 +121,22 @@ class AuthRepository {
     }
   }
 
-  Future<dynamic> DeleteAccount(dynamic data) async {
+  Future<dynamic> submitAccountDeletionRequest(dynamic data) async {
     try {
       dynamic response = await _apiServices.getPostApiResponse(
-        AppUrl.deleteAccount,
+        AppUrl.accountDeletionRequest,
+        data,
+      );
+      return response;
+    } catch (e) {
+      throw e;
+    }
+  }
+
+  Future<dynamic> submitFeedbackApi(dynamic data) async {
+    try {
+      dynamic response = await _apiServices.getPostApiResponse(
+        AppUrl.feedback,
         data,
       );
       return response;

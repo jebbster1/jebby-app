@@ -10,12 +10,18 @@ class ParsedUsAddress {
   final String city;
   final String state;
   final String postalCode;
+  final String formattedAddress;
+  final double? latitude;
+  final double? longitude;
 
   const ParsedUsAddress({
     this.line1 = '',
     this.city = '',
     this.state = '',
     this.postalCode = '',
+    this.formattedAddress = '',
+    this.latitude,
+    this.longitude,
   });
 
   bool get hasLine1 => line1.trim().isNotEmpty;
@@ -25,15 +31,6 @@ class ParsedUsAddress {
       ProviderOnboardingData.isValidUsPostalCode(postalCode);
 
   bool get isComplete => hasLine1 && hasCity && hasState && hasPostalCode;
-
-  List<String> get missingFieldLabels {
-    final missing = <String>[];
-    if (!hasLine1) missing.add('Street address');
-    if (!hasCity) missing.add('City');
-    if (!hasState) missing.add('State');
-    if (!hasPostalCode) missing.add('ZIP code');
-    return missing;
-  }
 
   String get displaySummary {
     final line = line1.trim();
@@ -48,17 +45,48 @@ class ParsedUsAddress {
     return tail;
   }
 
+  String get displayLine {
+    if (formattedAddress.trim().isNotEmpty) return formattedAddress.trim();
+    return displaySummary;
+  }
+
+  bool get hasCoordinates => latitude != null && longitude != null;
+
+  /// Complete structured address confirmed from Places (includes coordinates).
+  bool get isVerified => isComplete && hasCoordinates;
+
+  /// Map coordinates tied to a resolved address line (Places, draft, or saved profile).
+  bool get hasResolvedMapLocation =>
+      hasCoordinates && displayLine.trim().isNotEmpty;
+
+  static const selectFromSuggestionsMessage =
+      'Please select an address from the suggestions.';
+
+  /// Returns an error message when map/search location was not confirmed from Places.
+  static String? mapLocationValidationError(ParsedUsAddress? address) {
+    if (address?.hasResolvedMapLocation != true) {
+      return selectFromSuggestionsMessage;
+    }
+    return null;
+  }
+
   ParsedUsAddress copyWith({
     String? line1,
     String? city,
     String? state,
     String? postalCode,
+    String? formattedAddress,
+    double? latitude,
+    double? longitude,
   }) {
     return ParsedUsAddress(
       line1: line1 ?? this.line1,
       city: city ?? this.city,
       state: state ?? this.state,
       postalCode: postalCode ?? this.postalCode,
+      formattedAddress: formattedAddress ?? this.formattedAddress,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
     );
   }
 
@@ -67,12 +95,18 @@ class ParsedUsAddress {
     required String city,
     required String state,
     required String postalCode,
+    String formattedAddress = '',
+    double? latitude,
+    double? longitude,
   }) {
     return ParsedUsAddress(
       line1: line1,
       city: city,
       state: state.toUpperCase(),
       postalCode: postalCode.replaceAll(RegExp(r'\D'), ''),
+      formattedAddress: formattedAddress,
+      latitude: latitude,
+      longitude: longitude,
     );
   }
 }
@@ -151,6 +185,14 @@ class GooglePlacesAddressService {
       var parsed = parsePlaceResult(Map<String, dynamic>.from(result));
       if (parsed == null) return null;
 
+      final formattedAddress = result['formatted_address']?.toString() ?? '';
+      final coordinates = _readCoordinates(result);
+      parsed = parsed.copyWith(
+        formattedAddress: formattedAddress,
+        latitude: coordinates?.$1,
+        longitude: coordinates?.$2,
+      );
+
       if (!parsed.hasPostalCode) {
         final zipFromCoords = await _lookupZipFromGeometry(result);
         if (zipFromCoords != null) {
@@ -162,6 +204,19 @@ class GooglePlacesAddressService {
     } finally {
       resetSession();
     }
+  }
+
+  (double, double)? _readCoordinates(Map<dynamic, dynamic> result) {
+    final geometry = result['geometry'];
+    if (geometry is! Map) return null;
+
+    final location = geometry['location'];
+    if (location is! Map) return null;
+
+    final lat = (location['lat'] as num?)?.toDouble();
+    final lng = (location['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return null;
+    return (lat, lng);
   }
 
   Future<String?> _lookupZipFromGeometry(Map<dynamic, dynamic> result) async {

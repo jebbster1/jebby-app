@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
+import '../utils/api_headers.dart';
 import '../res/app_url.dart';
 import '../view_model/user_view_model.dart';
 
@@ -126,7 +127,7 @@ class FCMService {
         
         final response = await http.post(
           Uri.parse(AppUrl.updateFCMToken),
-          headers: {'Content-Type': 'application/json'},
+          headers: await ApiHeaders.json(),
           body: json.encode({
             'user_id': user.id,
             'fcm_token': token,

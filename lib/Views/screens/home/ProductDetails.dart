@@ -2,7 +2,6 @@
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +10,7 @@ import 'package:jebby/Views/screens/agreements/insuranceAndIndemnifications.dart
 import 'package:jebby/Views/screens/agreements/rentalAgreement.dart';
 import 'package:jebby/Views/screens/agreements/termsAndConditions.dart';
 import 'package:jebby/Views/screens/agreements/transportAndInstallationPolicy.dart';
+import 'package:jebby/Views/screens/auth/login.dart';
 import 'package:jebby/Views/screens/home/RentNow.dart';
 import 'package:jebby/Views/screens/profile/userprofile.dart';
 import 'package:jebby/Views/screens/home/Messages.dart';
@@ -21,10 +21,13 @@ import '../../../model/getReviewsByProductId.dart' as review_model;
 import '../../../model/product_chat_context.dart';
 import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
+import '../../../utils/profile_image.dart';
 import '../../../view_model/apiServices.dart';
 import '../../../view_model/user_view_model.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/Services/analytics_service.dart';
+import 'package:jebby/Services/provider/sign_in_provider.dart';
+import 'package:provider/provider.dart';
 
 class ProductDetailScreen extends StatefulWidget {
   final dynamic id;
@@ -35,7 +38,6 @@ class ProductDetailScreen extends StatefulWidget {
   final dynamic specs;
   final dynamic userID;
   final dynamic desc;
-  final dynamic messageStatus;
   final dynamic delivery_charges;
   final dynamic sourceId;
 
@@ -48,7 +50,6 @@ class ProductDetailScreen extends StatefulWidget {
     this.specs,
     this.userID,
     this.desc,
-    this.messageStatus,
     this.delivery_charges, {
     this.sourceId,
   });
@@ -63,6 +64,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   static const Color _labelGrey = Color(0xFF72747A);
   static const Color _bodyGrey = Color(0xFF6D6D75);
   static const Color _titleDark = Color(0xFF1B1B1F);
+  static const Color _starInactive = Color(0xFFC6C8CF);
 
   bool fav = false;
   String? role;
@@ -72,6 +74,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   String vendorAddress = "";
   String vendorImage = "";
   String vendorBackImage = "";
+  String vendorAccountId = "";
 
   final PageController _pageController = PageController();
   int _imageIndex = 0;
@@ -88,14 +91,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     1: 0.0,
   };
 
-  /// Product availability window (API: pastart / paend).
+  /// Product availability window (API: available_from / available_to).
   DateTime? _availStart;
   DateTime? _availEnd;
-
-  /// Blocked / booked window (API: dastart / daend). Shown red when it differs from availability.
-  DateTime? _blockedStart;
-  DateTime? _blockedEnd;
   DateTime _calendarMonth = DateTime(DateTime.now().year, DateTime.now().month);
+
+  String _listingAddress = '';
+  String _listingLat = '';
+  String _listingLng = '';
+  int _isDelivery = 0;
+  String _specificationsFromApi = '';
 
   bool get _isProductOwner =>
       sourceId.isNotEmpty && sourceId == widget.userID.toString();
@@ -135,6 +140,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     });
   }
 
+  String _vendorCredentialValue(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty || text == '0') {
+      return '';
+    }
+    return text;
+  }
+
   void getVendor() {
     ApiRepository.shared.userCredential(
       (_) {
@@ -143,8 +156,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           setState(() {
             vendorName = v.name.toString();
             vendorAddress = v.address.toString();
-            vendorImage = v.image.toString();
-            vendorBackImage = v.backImage.toString();
+            vendorImage = ProfileImage.sanitizePath(v.profileImage?.toString());
+            vendorBackImage = v.coverImage.toString();
+            vendorAccountId = _vendorCredentialValue(v.accountId);
           });
         }
       },
@@ -159,14 +173,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         final urls = _extractImageUrls(list);
         DateTime? a0;
         DateTime? a1;
-        DateTime? b0;
-        DateTime? b1;
         if (list.data != null && list.data!.isNotEmpty) {
           final p = list.data!.first;
-          a0 = _parseDateOnly(p.pastart);
-          a1 = _parseDateOnly(p.paend);
-          b0 = _parseDateOnly(p.dastart);
-          b1 = _parseDateOnly(p.daend);
+          a0 = _parseDateOnly(p.availableFrom);
+          a1 = _parseDateOnly(p.availableTo);
+          _listingAddress = p.address?.toString().trim() ?? '';
+          _listingLat = p.latitude?.toString() ?? '';
+          _listingLng = p.longitude?.toString() ?? '';
+          _isDelivery = p.isDelivery ?? 0;
+          final specStr = p.specifications?.toString().trim() ?? '';
+          _specificationsFromApi =
+              specStr.isEmpty ? '' : specStr;
         }
         if (mounted) {
           setState(() {
@@ -174,8 +191,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             _galleryLoading = false;
             _availStart = a0;
             _availEnd = a1;
-            _blockedStart = b0;
-            _blockedEnd = b1;
             // Always open on the current month — never jump to a past availability start month.
             _calendarMonth = DateTime(
               DateTime.now().year,
@@ -199,24 +214,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   DateTime? _parseDateOnly(dynamic raw) {
     if (raw == null) return null;
     final s = raw.toString().trim();
-    if (s.isEmpty || s.toLowerCase() == 'null') return null;
+    if (s.isEmpty) return null;
     final d = DateTime.tryParse(s);
     if (d == null) return null;
     return DateTime(d.year, d.month, d.day);
-  }
-
-  bool _sameCalendarDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
-
-  bool _blockedMatchesAvailability() {
-    if (_availStart == null ||
-        _availEnd == null ||
-        _blockedStart == null ||
-        _blockedEnd == null) {
-      return true;
-    }
-    return _sameCalendarDay(_availStart!, _blockedStart!) &&
-        _sameCalendarDay(_availEnd!, _blockedEnd!);
   }
 
   bool _isInsideRange(DateTime day, DateTime start, DateTime end) {
@@ -226,14 +227,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   bool _isInAvailability(DateTime day) {
     if (_availStart == null || _availEnd == null) return false;
     return _isInsideRange(day, _availStart!, _availEnd!);
-  }
-
-  bool _isBookedDay(DateTime day) {
-    if (_blockedStart == null || _blockedEnd == null) return false;
-    if (_availStart == null || _availEnd == null) return false;
-    if (_blockedMatchesAvailability()) return false;
-    if (!_isInsideRange(day, _blockedStart!, _blockedEnd!)) return false;
-    return _isInAvailability(day);
   }
 
   /// True when [day] is strictly before today (date-only). Past days are never "available" UI.
@@ -268,6 +261,16 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   String _formatApiDate(DateTime? d) =>
       d == null ? '' : DateFormat('yyyy-MM-dd').format(d);
+
+  String _listingLocationLabel() {
+    if (_listingAddress.isNotEmpty) return _listingAddress;
+    final lat = double.tryParse(_listingLat);
+    final lng = double.tryParse(_listingLng);
+    if (lat != null && lng != null && (lat != 0 || lng != 0)) {
+      return 'Lat ${lat.toStringAsFixed(4)}, Lng ${lng.toStringAsFixed(4)}';
+    }
+    return '';
+  }
 
   List<String> _extractImageUrls(GetProductsByProductId list) {
     final urls = <String>[];
@@ -349,13 +352,52 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  void rentClicked(BuildContext context) async {
+  Future<void> rentClicked(BuildContext context) async {
+    final user = await getUserDate();
+    if (user.role == 'Guest' || user.isGuest == true) {
+      await UserViewModel().remove();
+      if (!mounted) return;
+      await context.read<SignInProvider>().userSignOut();
+      Get.offAll(() => LoginScreen());
+      return;
+    }
+
     AnalyticsService.instance.track(
       'rent_flow_started',
       props: {
         'product_id': widget.id,
       },
     );
+
+    var accountId = vendorAccountId;
+
+    if (accountId.isEmpty) {
+      final creds = await ApiRepository.shared.userCredential(
+        (_) {},
+        (_) {},
+        widget.userID.toString(),
+      );
+      if (creds.data != null && creds.data!.isNotEmpty) {
+        final v = creds.data!.first;
+        accountId = _vendorCredentialValue(v.accountId);
+        if (mounted) {
+          setState(() {
+            vendorAccountId = accountId;
+          });
+        }
+      }
+    }
+
+    final product = ApiRepository.shared.getProductsByIdList?.data?.isNotEmpty == true
+        ? ApiRepository.shared.getProductsByIdList!.data!.first
+        : null;
+    final securityDeposit = product?.security_deposit?.toString() ?? '0';
+    final deliveryCharges =
+        product?.delivery_charges?.toString() ??
+        widget.delivery_charges?.toString() ??
+        '0';
+    final isDelivery = product?.isDelivery ?? _isDelivery;
+
     Get.to(
       () => RentnowScreen(
         vendorName,
@@ -367,11 +409,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         _formatApiDate(_availStart),
         _formatApiDate(_availEnd),
         widget.price,
-        "",
-        "",
+        accountId,
         "simple",
-        widget.delivery_charges,
-        "",
+        deliveryCharges,
+        securityDeposit,
+        isDelivery,
+        _listingAddress,
+        _listingLat,
+        _listingLng,
       ),
     );
   }
@@ -379,10 +424,52 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   double get _avgRating =>
       double.tryParse(widget.stars.toString())?.clamp(0, 5) ?? 0;
 
-  List<MapEntry<String, String>> _parsedSpecs() {
-    final raw = widget.specs?.toString() ?? '';
+  Widget _myProductsStyleStars(double rating, {double size = 18}) {
+    final filledStars = (rating.isNaN ? 0.0 : rating).round().clamp(0, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (index) {
+        final active = index < filledStars;
+        return Padding(
+          padding: const EdgeInsets.only(right: 2),
+          child: Icon(
+            active ? Icons.star : Icons.star_border,
+            color: active ? _accent : _starInactive,
+            size: size,
+          ),
+        );
+      }),
+    );
+  }
+
+  String _normalizedSpecificationsRaw() {
+    for (final candidate in [_specificationsFromApi, widget.specs?.toString()]) {
+      final raw = candidate?.trim() ?? '';
+      if (raw.isNotEmpty) return raw;
+    }
+    return '';
+  }
+
+  List<MapEntry<String, String>> _parseSpecificationsString(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return const [];
+
+    final commaSeparated = RegExp(r'(?:^|, )([^:]+):\s*(.*?)(?=, [^:]+:|$)');
+    final commaMatches = commaSeparated.allMatches(text).toList();
+    if (commaMatches.isNotEmpty) {
+      return commaMatches
+          .map((match) {
+            final key = match.group(1)?.trim() ?? '';
+            final value = match.group(2)?.trim() ?? '';
+            if (key.isEmpty) return null;
+            return MapEntry(key, value);
+          })
+          .whereType<MapEntry<String, String>>()
+          .toList();
+    }
+
     final out = <MapEntry<String, String>>[];
-    for (final line in raw.split(RegExp(r'\r?\n'))) {
+    for (final line in text.split(RegExp(r'\r?\n'))) {
       final t = line.trim();
       if (t.isEmpty) continue;
       final idx = t.indexOf(':');
@@ -392,16 +479,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         );
       }
     }
-    if (out.isEmpty) {
-      return const [
-        MapEntry('Material', 'Wooden'),
-        MapEntry('Condition', 'New'),
-        MapEntry('Finish', 'Simple Finish'),
-        MapEntry('Style', 'Minimal'),
-      ];
-    }
     return out;
   }
+
+  List<MapEntry<String, String>> _parsedSpecs() =>
+      _parseSpecificationsString(_normalizedSpecificationsRaw());
 
   String _relativeTime(String? iso) {
     if (iso == null || iso.isEmpty) return '';
@@ -611,6 +693,38 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 height: 1.45,
               ),
             ),
+            if (_listingLocationLabel().isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+              const SizedBox(height: 16),
+              Text(
+                _isDelivery == 1 ? 'Delivery from' : 'Pickup location',
+                style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: _titleDark,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.location_on_outlined, size: 20, color: _accent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _listingLocationLabel(),
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w400,
+                        color: _bodyGrey,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 20),
             Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
             const SizedBox(height: 12),
@@ -634,13 +748,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     CircleAvatar(
                       radius: 22,
                       backgroundColor: Colors.grey.shade300,
-                      backgroundImage:
-                          vendorImage.isEmpty
-                              ? const AssetImage(
-                                    'assets/slicing/blankuser.jpeg',
-                                  )
-                                  as ImageProvider
-                              : NetworkImage(AppUrl.baseUrlM + vendorImage),
+                      backgroundImage: ProfileImage.avatarProvider(
+                        AppUrl.baseUrlM,
+                        vendorImage,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -669,7 +780,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            ...specs.map((e) => _specDividerRow(e.key, e.value)),
+            if (specs.isEmpty)
+              Text(
+                'No specifications listed.',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  color: _bodyGrey,
+                ),
+              )
+            else
+              ...specs.map((e) => _specDividerRow(e.key, e.value)),
             if (!_galleryLoading) ...[
               const SizedBox(height: 16),
               _buildAvailabilitySection(),
@@ -773,16 +894,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 10),
-                                  RatingBarIndicator(
-                                    rating: _avgRating,
-                                    itemCount: 5,
-                                    itemSize: 16,
-                                    itemBuilder:
-                                        (_, __) => const Icon(
-                                          Icons.star_rounded,
-                                          color: _accent,
-                                        ),
-                                  ),
+                                  _myProductsStyleStars(_avgRating, size: 16),
                                 ],
                               ),
                             ),
@@ -914,8 +1026,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   static const Color _availCardBorder = Color(0xFFE5E5EA);
   static const Color _availCardBg = Color(0xFFF7F7F9);
-  static const Color _bookedRed = Color(0xFFE53935);
-
   Widget _buildAvailabilitySection() {
     return Container(
       width: double.infinity,
@@ -1013,7 +1123,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           label: 'Unavailable',
           outlined: true,
         ),
-        _legendDot(fill: _bookedRed, label: 'Booked', outlined: false),
       ],
     );
   }
@@ -1132,9 +1241,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Widget _calendarDayCell(DateTime day, {required bool outsideMonth}) {
     const double h = 30;
     final isPast = !outsideMonth && _isPastCalendarDay(day);
-    final booked = !outsideMonth && !isPast && _isBookedDay(day);
     final inWindow = !outsideMonth && _isInAvailability(day);
-    final showAvailableGrey = inWindow && !booked && !isPast;
+    final showAvailableGrey = inWindow && !isPast;
 
     Color textColor;
     if (outsideMonth) {
@@ -1156,34 +1264,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       ),
     );
 
-    if (booked) {
-      inner = Container(
-        width: 26,
-        height: 26,
-        alignment: Alignment.center,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: Color(0xFFFFEBEE),
-        ),
-        child: Container(
-          width: 22,
-          height: 22,
-          alignment: Alignment.center,
-          decoration: const BoxDecoration(
-            shape: BoxShape.circle,
-            color: _bookedRed,
-          ),
-          child: Text(
-            '${day.day}',
-            style: GoogleFonts.inter(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      );
-    } else if (showAvailableGrey) {
+    if (showAvailableGrey) {
       inner = Container(
         width: 26,
         height: 26,
@@ -1268,7 +1349,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   Widget _reviewPreviewCard(review_model.Data r) {
     final name = r.userName?.toString() ?? 'User';
-    final img = r.image?.toString() ?? '';
+    final img = ProfileImage.sanitizePath(r.image?.toString());
     final starsVal = (r.stars ?? 0).toDouble().clamp(0, 5);
     final desc = r.description?.toString() ?? '';
     final snippet = desc.length > 120 ? '${desc.substring(0, 120)}…' : desc;
@@ -1279,11 +1360,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         CircleAvatar(
           radius: 24,
           backgroundColor: Colors.grey.shade300,
-          backgroundImage:
-              img.isNotEmpty
-                  ? NetworkImage(AppUrl.baseUrlM + img)
-                  : const AssetImage('assets/slicing/blankuser.jpeg')
-                      as ImageProvider,
+          backgroundImage: ProfileImage.avatarProvider(AppUrl.baseUrlM, img),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -1320,7 +1397,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.star_rounded, color: _accent, size: 18),
+                      Icon(Icons.star, color: _accent, size: 18),
                       const SizedBox(width: 2),
                       Text(
                         starsVal.toStringAsFixed(1),
@@ -1396,9 +1473,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kprimaryColor,
-                    // TODO: remove following two lines when rentals are ready
-                    disabledBackgroundColor: Colors.grey.shade400,
-                    disabledForegroundColor: Colors.white,
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1406,7 +1480,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  // TODO: re-enable when rentals are ready
+                  // TODO: Renable when renters are ready
                   // onPressed: () => rentClicked(context),
                   onPressed: null,
                   child: Text(

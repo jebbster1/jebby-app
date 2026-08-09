@@ -3,12 +3,13 @@ import 'package:get/get.dart';
 import 'package:jebby/res/color.dart';
 import 'package:provider/provider.dart';
 
-import '../../../utils/utils.dart';
+import '../../../utils/show_snackbar.dart';
 import '../../../view_model/auth_view_model.dart';
 
 class CreatePasswordScreen extends StatefulWidget {
   final String? email;
-  const CreatePasswordScreen({Key? key, this.email}) : super(key: key);
+  final String? otp;
+  const CreatePasswordScreen({Key? key, this.email, this.otp}) : super(key: key);
 
   @override
   State<CreatePasswordScreen> createState() => _CreatePasswordScreenState();
@@ -29,7 +30,6 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authViewMode = Provider.of<AuthViewModel>(context);
     double res_width = MediaQuery.of(context).size.width;
 
     return Scaffold(
@@ -57,7 +57,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
               flex: 40,
               child: Center(
                 child: Image.asset(
-                  'assets/slicing/createPassword.png',
+                  'assets/images/createPassword.png',
                   width: res_width * 0.55,
                   fit: BoxFit.contain,
                 ),
@@ -214,52 +214,79 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
                         ),
                       ),
                       SizedBox(height: 32),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            if (_passwordController.text.isEmpty) {
-                              Utils.flushBarErrorMessage(
-                                  'Enter Your Password', context);
-                            } else if (!_passwordController.text.contains(
-                                RegExp(r'^(?=.*?[A-Z])(?=.*?[!@#\$&*~]).{8,}$'))) {
-                              Utils.flushBarErrorMessage(
-                                'Password should be minimum of 8 characters and contain small letter, capital letter and special character',
-                                context,
-                              );
-                            } else if (_confirmpasswordController.text.isEmpty) {
-                              Utils.flushBarErrorMessage(
-                                  'Enter Confirm Password', context);
-                            } else if (_passwordController.text !=
-                                _confirmpasswordController.text) {
-                              Utils.flushBarErrorMessage(
-                                  'Password doesn\'t match', context);
-                            } else {
-                              Map data = {
-                                "email": widget.email.toString(),
-                                "password": _passwordController.text.toString(),
-                              };
-                              authViewMode.changePasswordAPi(data, context);
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaryColor,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
+                      Consumer<AuthViewModel>(
+                        builder: (context, authViewMode, _) {
+                          final isLoading = authViewMode.signUpLoading;
+
+                          if (isLoading) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 15),
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.primaryColor,
+                                ),
+                              ),
+                            );
+                          }
+
+                          return SizedBox(
+                            width: double.infinity,
+                            height: 54,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                if (_passwordController.text.isEmpty) {
+                                  showAppErrorSnackbar(
+                                    'Enter Your Password',
+                                    title: 'Required',
+                                  );
+                                } else if (!_passwordController.text.contains(
+                                    RegExp(
+                                        r'^(?=.*?[A-Z])(?=.*?[!@#\$&*~]).{8,}$'))) {
+                                  showAppErrorSnackbar(
+                                    'Password should be minimum of 8 characters and contain small letter, capital letter and special character',
+                                  );
+                                } else if (_confirmpasswordController
+                                    .text.isEmpty) {
+                                  showAppErrorSnackbar(
+                                    'Enter Confirm Password',
+                                    title: 'Required',
+                                  );
+                                } else if (_passwordController.text !=
+                                    _confirmpasswordController.text) {
+                                  showAppErrorSnackbar(
+                                    'Password doesn\'t match',
+                                  );
+                                } else {
+                                  authViewMode.changePasswordAPi(
+                                    {
+                                      'email': widget.email.toString(),
+                                      'otp': widget.otp.toString(),
+                                      'password':
+                                          _passwordController.text.toString(),
+                                    },
+                                    context,
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primaryColor,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                              ),
+                              child: Text(
+                                'Save Password',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  fontFamily: 'Inter, Regular',
+                                ),
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            'Save Password',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              fontFamily: "Inter, Regular"
-                            ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ],
                   ),

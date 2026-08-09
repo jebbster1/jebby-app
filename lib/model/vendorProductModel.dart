@@ -45,10 +45,9 @@ class Data {
   String? name;
   int? price;
   String? specifications;
-  String? serviceAgreements;
+  String? description;
   String? createdAt;
   String? updatedAt;
-  int? negotiation;
 
   Data({
     this.id,
@@ -58,10 +57,9 @@ class Data {
     this.name,
     this.price,
     this.specifications,
-    this.serviceAgreements,
+    this.description,
     this.createdAt,
     this.updatedAt,
-    this.negotiation,
   });
 
   Data.fromJson(Map<String, dynamic> json) {
@@ -72,10 +70,9 @@ class Data {
     name = json['name'];
     price = json['price'];
     specifications = json['specifications'];
-    serviceAgreements = json['service_agreements'];
+    description = json['description'];
     createdAt = json['created_at'];
     updatedAt = json['updated_at'];
-    negotiation = json['negotiation'];
   }
 
   Map<String, dynamic> toJson() {
@@ -87,10 +84,9 @@ class Data {
     data['name'] = this.name;
     data['price'] = this.price;
     data['specifications'] = this.specifications;
-    data['service_agreements'] = this.serviceAgreements;
+    data['description'] = this.description;
     data['created_at'] = this.createdAt;
     data['updated_at'] = this.updatedAt;
-    data['negotiation'] = this.negotiation;
     return data;
   }
 }

@@ -35,12 +35,9 @@ class Data {
   String? name;
   int? price;
   String? specifications;
-  String? serviceAgreements;
+  String? description;
   String? createdAt;
   String? updatedAt;
-  int? negotiation;
-  int? isMessage;
-  int? isReview;
   String? stars;
   String? length;
   String? image;
@@ -54,12 +51,9 @@ class Data {
     this.name,
     this.price,
     this.specifications,
-    this.serviceAgreements,
+    this.description,
     this.createdAt,
     this.updatedAt,
-    this.negotiation,
-    this.isMessage,
-    this.isReview,
     this.stars,
     this.length,
     this.image,
@@ -74,12 +68,9 @@ class Data {
     name = json['name'];
     price = json['price'];
     specifications = json['specifications'];
-    serviceAgreements = json['service_agreements'];
+    description = json['description'];
     createdAt = json['created_at'];
     updatedAt = json['updated_at'];
-    negotiation = json['negotiation'];
-    isMessage = json['isMessage'];
-    isReview = json['is_review'];
     stars = json['stars'];
     length = json['length'];
     image = json['image'];
@@ -95,12 +86,9 @@ class Data {
     data['name'] = this.name;
     data['price'] = this.price;
     data['specifications'] = this.specifications;
-    data['service_agreements'] = this.serviceAgreements;
+    data['description'] = this.description;
     data['created_at'] = this.createdAt;
     data['updated_at'] = this.updatedAt;
-    data['negotiation'] = this.negotiation;
-    data['isMessage'] = this.isMessage;
-    data['is_review'] = this.isReview;
     data['stars'] = this.stars;
     data['length'] = this.length;
     data['image'] = this.image;

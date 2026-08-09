@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
@@ -9,7 +11,7 @@ import 'package:jebby/Views/screens/profile/userprofile.dart';
 import 'package:jebby/Views/screens/vendors/vendorhome.dart';
 import 'package:jebby/model/user_model.dart';
 import 'package:jebby/respository/auth_repository.dart';
-import 'package:jebby/utils/utils.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/view_model/user_view_model.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +27,12 @@ class AuthViewModel with ChangeNotifier {
 
   bool _signUpLoading = false;
   bool get signUpLoading => _signUpLoading;
+
+  bool _resendOtpLoading = false;
+  bool get resendOtpLoading => _resendOtpLoading;
+
+  bool _accountDeletionLoading = false;
+  bool get accountDeletionLoading => _accountDeletionLoading;
 
   String userName = "";
   setLoading(bool value) {
@@ -44,11 +52,34 @@ class AuthViewModel with ChangeNotifier {
     notifyListeners();
   }
 
+  void setResendOtpLoading(bool value) {
+    _resendOtpLoading = value;
+    notifyListeners();
+  }
+
+  void setAccountDeletionLoading(bool value) {
+    _accountDeletionLoading = value;
+    notifyListeners();
+  }
+
+  String _accountDeletionErrorMessage(Object error) {
+    final raw = error.toString();
+    final jsonStart = raw.indexOf('{');
+    if (jsonStart != -1) {
+      try {
+        final decoded = jsonDecode(raw.substring(jsonStart));
+        if (decoded is Map && decoded['message'] != null) {
+          return decoded['message'].toString();
+        }
+      } catch (_) {}
+    }
+    return raw.replaceFirst('Invalid request', '').trim();
+  }
+
   Future<void> loginApi(
     dynamic data,
-    BuildContext context, {
-    bool isFromGuestFlow = false,
-  }) async {
+    BuildContext context,
+  ) async {
     setLoading(true);
     Loader.show();
 
@@ -57,11 +88,17 @@ class AuthViewModel with ChangeNotifier {
       Loader.hide();
       final userPreference = Provider.of<UserViewModel>(context, listen: false);
       if (value["message"].toString() == "Incorrect password") {
-        Utils.flushBarErrorMessage('Incorrect password', context);
+        showAppErrorSnackbar('Incorrect password');
       } else if (value["message"].toString() == "enter valid email") {
-        Utils.flushBarErrorMessage('Email doesn\'t Exist', context);
+        showAppErrorSnackbar('Email doesn\'t exist');
       } else if (value["message"].toString() == "account is not verified") {
-        Utils.flushBarErrorMessage('Account is not verified', context);
+        _openRegistrationOtpFromLogin(
+          context: context,
+          email: data['email'].toString(),
+          password: data['password'].toString(),
+          name: value['name']?.toString(),
+          role: value['role']?.toString(),
+        );
       } else {
         userPreference.saveUser(UserModel(
           token: value['token'].toString(),
@@ -70,47 +107,125 @@ class AuthViewModel with ChangeNotifier {
           id: value['id'].toString(),
           role: value['role'].toString(),
           address: value['address'].toString(),
+          source: value['source']?.toString() ?? 'simple',
         ));
         userName = value['name'].toString();
 
         // Save user data to SharedPreferences
         SharedPreferences.getInstance().then((prefs) {
           prefs.setString('stripe_verification_status', value['stripe_verification_status'] ?? "");
-          prefs.setBool('identity_verified', value['identity_verified'] == 1 || value['identity_verified'] == "1");
+          prefs.setBool('is_identity_verified', value['is_identity_verified'] == 1 || value['is_identity_verified'] == "1");
         });
-        
-        if (isFromGuestFlow) {
-          Get.until((route) {
-            return Get.currentRoute == "/PD";
-          });
+
+        loginType = "user";
+        final userRole = value['role'].toString();
+        if (userRole == "1") {
+          Get.offAll(() => VendrosHomeScreen());
         } else {
-          loginType = "user";
-          // Check user role and navigate accordingly
-          String userRole = value['role'].toString();
-          if (userRole == "1") {
-            // User is a provider, navigate to VendorsHomeScreen
-            Get.offAll(() => VendrosHomeScreen());
-          } else {
-            // User is a renter, navigate to MainScreen
-            Get.offAll(() => MainScreen());
-          }
+          Get.offAll(() => MainScreen());
         }
       }
     }).onError((error, stackTrace) {
       Loader.hide();
       setLoading(false);
-      Utils.flushBarErrorMessage(error.toString(), context);
+      showAppErrorSnackbar(error.toString());
       if (kDebugMode) {
         
       }
     });
   }
 
+  Future<void> resendRegistrationOtp({
+    required String email,
+    required String password,
+    BuildContext? context,
+    bool openOtpScreen = false,
+    String? name,
+    String? role,
+  }) async {
+    if (_resendOtpLoading) return;
+    setResendOtpLoading(true);
+
+    try {
+      final value = await _myRepo.resendRegistrationOtpApi({
+        'email': email,
+        'password': password,
+      });
+
+      if (value['message'].toString() == 'OTP send') {
+        showAppSuccessSnackbar('Verification code sent');
+        if (openOtpScreen && context != null) {
+          Get.to(
+            () => OTPSCREEN(
+              email: email,
+              name: name ?? '',
+              password: password,
+              role: role ?? '0',
+            ),
+          );
+        }
+      } else if (value['message'].toString() == 'Incorrect password') {
+        showAppErrorSnackbar('Incorrect password');
+      } else if (value['message'].toString() == 'Email Already Registered') {
+        showAppErrorSnackbar('This email is already verified. Try signing in.');
+      } else {
+        showAppErrorSnackbar(
+          value['message']?.toString() ?? 'Could not resend verification code',
+        );
+      }
+    } catch (error) {
+      showAppErrorSnackbar(error.toString());
+    } finally {
+      setResendOtpLoading(false);
+    }
+  }
+
+  Future<void> resendForgotPasswordOtp(String email) async {
+    if (_resendOtpLoading) return;
+    setResendOtpLoading(true);
+
+    try {
+      final value = await _myRepo.forgetPasswordApi({'email': email});
+
+      if (value['message'].toString() == 'Otp Send') {
+        showAppSuccessSnackbar('OTP sent successfully');
+      } else if (value['message'].toString() == 'Email not Found') {
+        showAppErrorSnackbar('Email not Found');
+      } else if (value['message'].toString() == 'this is a social auth account') {
+        showAppErrorSnackbar(
+          'This email is linked to a social sign-in account. Sign in with Google, Facebook, or Apple instead.',
+        );
+      } else {
+        showAppErrorSnackbar('Something went wrong');
+      }
+    } catch (error) {
+      showAppErrorSnackbar(error.toString());
+    } finally {
+      setResendOtpLoading(false);
+    }
+  }
+
+  void _openRegistrationOtpFromLogin({
+    required BuildContext context,
+    required String email,
+    required String password,
+    String? name,
+    String? role,
+  }) {
+    resendRegistrationOtp(
+      email: email,
+      password: password,
+      context: context,
+      openOtpScreen: true,
+      name: name,
+      role: role,
+    );
+  }
+
   Future<void> signUpApi(
     dynamic data,
-    BuildContext context, {
-    bool isFromGuestFlow = false,
-  }) async {
+    BuildContext context,
+  ) async {
     if (_signUpLoading) return;
     setSignUpLoading(true);
 
@@ -119,51 +234,54 @@ class AuthViewModel with ChangeNotifier {
         .then((value) async {
           setSignUpLoading(false);
           if (value["message"].toString() == "OTP send") {
-            Utils.flushBarSuccessMessage('Otp sent', context);
+            showAppSuccessSnackbar('Otp sent');
             Get.to(
               () => OTPSCREEN(
                 email: data["email"],
-                name: data["full_name"],
+                name: data["name"],
                 password: data["password"],
                 role: data["role"],
-                isGuestUserFlow: isFromGuestFlow,
               ),
             );
           } else if (value["message"].toString() == "Signin successfull") {
-            Utils.flushBarSuccessMessage('Signin Successful', context);
+            showAppSuccessSnackbar('Signin Successful');
 
         // Save Data To SharedPrefrences
         SharedPreferences updatePrefrences = await SharedPreferences.getInstance();
         
         
-        updatePrefrences.setString('fullname', value["data"]["full_name"].toString());
+        updatePrefrences.setString('fullname', value["data"]["name"].toString());
         updatePrefrences.setString('email', value["data"]["email"].toString());
         updatePrefrences.setString('id', value["data"]["id"].toString());
-        updatePrefrences.setString('phoneNumber', value["data"]["phoneNumber"].toString());
-        // updatePrefrences.setString('address', value["address"].toString());
+        if (value['token'] != null) {
+          updatePrefrences.setString('token', value['token'].toString());
+        }
+        updatePrefrences.setString('phoneNumber', value["data"]["phone_number"].toString());
         updatePrefrences.setString('latitude', value["data"]["latitude"].toString());
         updatePrefrences.setString('longitude', value["data"]["longitude"].toString());
         updatePrefrences.setString('role', value["data"]["role"].toString());
-        // updatePrefrences.setString('number', value["number"].toString());
+        updatePrefrences.setString(
+          'source',
+          value["data"]["source"]?.toString() ?? 'simple',
+        );
         
         // Save stripe verification status for future use
         updatePrefrences.setString('stripe_verification_status', value["data"]["stripe_verification_status"] ?? "");
-        updatePrefrences.setBool('identity_verified', value["data"]["identity_verified"] == 1 || value["data"]["identity_verified"] == "1");
+        updatePrefrences.setBool('is_identity_verified', value["data"]["is_identity_verified"] == 1 || value["data"]["is_identity_verified"] == "1");
         
         // Always go to MainScreen after signup - Stripe onboarding will be handled when user becomes provider
         Get.offAll(() => MainScreen());
       } else if (value["message"].toString() == "Email Already Registered") {
-        Utils.flushBarErrorMessage('Email Already Registered', context);
+        showAppErrorSnackbar('Email Already Registered');
       } else {
-        Utils.flushBarErrorMessage('Something went wrong', context);
+        showAppErrorSnackbar('Something went wrong');
       }
-      //  Get.to(()=> OTPSCREEN()) ;
       if (kDebugMode) {
         
       }
     }).onError((error, stackTrace) {
       setSignUpLoading(false);
-      Utils.flushBarErrorMessage(error.toString(), context);
+      showAppErrorSnackbar(error.toString());
       if (kDebugMode) {
         
       }
@@ -172,38 +290,47 @@ class AuthViewModel with ChangeNotifier {
 
   Future<void> otpRegisterApi(
     dynamic data,
-    BuildContext context, {
-    bool isGuestUserFlow = false,
-  }) async {
+    BuildContext context,
+  ) async {
     setSignUpLoading(true);
 
     _myRepo.otpRegisterApi(data).then((value) {
       setSignUpLoading(false);
       if (value["message"].toString() == "Successfully signup") {
-        Utils.flushBarSuccessMessage('SignUp Successfully', context);
+        showAppSuccessSnackbar('Signup Successfully');
         
         // Save user data to SharedPreferences
         SharedPreferences.getInstance().then((prefs) async {
+          final data = value["data"];
           // Save basic user information
-          prefs.setString('fullname', value["data"]["full_name"].toString());
-          prefs.setString('email', value["data"]["email"].toString());
-          prefs.setString('id', value["data"]["id"].toString());
-          prefs.setString('phoneNumber', value["data"]["phoneNumber"].toString());
-          prefs.setString('latitude', value["data"]["latitude"].toString());
-          prefs.setString('longitude', value["data"]["longitude"].toString());
-          prefs.setString('role', value["data"]["role"].toString());
+          prefs.setString('fullname', data["name"].toString());
+          prefs.setString('email', data["email"].toString());
+          prefs.setString('id', data["id"].toString());
+          if (value['token'] != null) {
+            prefs.setString('token', value['token'].toString());
+          }
+          prefs.setString('phoneNumber', data["phone_number"].toString());
+          prefs.setString('latitude', data["latitude"].toString());
+          prefs.setString('longitude', data["longitude"].toString());
+          prefs.setString('role', data["role"].toString());
+          prefs.setString(
+            'source',
+            data["source"]?.toString() ?? 'simple',
+          );
           
           // Save stripe verification status for future use
-          prefs.setString('stripe_verification_status', value["data"]["stripe_verification_status"] ?? "");
-          prefs.setBool('identity_verified', value["data"]["identity_verified"] == 1 || value["data"]["identity_verified"] == "1");
+          prefs.setString('stripe_verification_status', data["stripe_verification_status"] ?? "");
+          prefs.setBool('is_identity_verified', data["is_identity_verified"] == 1 || data["is_identity_verified"] == "1");
         });
         
         // After successful signup, go to MainScreen - Stripe onboarding will be handled when user becomes provider
         Get.offAll(() => MainScreen());
       } else if (value["message"].toString() == "invalid OTP") {
-        Utils.flushBarErrorMessage('Invalid OTP', context);
+        showAppErrorSnackbar('Invalid OTP');
+      } else if (value["message"].toString() == "OTP expired") {
+        showAppErrorSnackbar('OTP expired. Request a new code.');
       } else {
-        Utils.flushBarErrorMessage('Something went wrong', context);
+        showAppErrorSnackbar('Something went wrong');
       }
       if (kDebugMode) {
         
@@ -211,7 +338,7 @@ class AuthViewModel with ChangeNotifier {
     }).onError((error, stackTrace) {
       print("Error in otpRegisterApi: $error");
       setSignUpLoading(false);
-      Utils.flushBarErrorMessage("Please Enter Otp", context);
+      showAppErrorSnackbar("Please Enter Otp");
 
           if (kDebugMode) {}
         });
@@ -225,82 +352,45 @@ class AuthViewModel with ChangeNotifier {
         .then((value) async {
           setSignUpLoading(false);
           if (value["message"].toString() == "Signin successfull") {
-            Utils.flushBarSuccessMessage('Signin Successful', context);
+            showAppSuccessSnackbar('Signin Successful');
 
         // Save Data To SharedPrefrences
         SharedPreferences updatePrefrences = await SharedPreferences.getInstance();
         
         
-        updatePrefrences.setString('fullname', value["data"]["full_name"].toString());
+        updatePrefrences.setString('fullname', value["data"]["name"].toString());
         updatePrefrences.setString('email', value["data"]["email"].toString());
         updatePrefrences.setString('id', value["data"]["id"].toString());
-        // updatePrefrences.setString('address', value["address"].toString());
+        if (value['token'] != null) {
+          updatePrefrences.setString('token', value['token'].toString());
+        }
         updatePrefrences.setString('latitude', value["data"]["latitude"].toString());
         updatePrefrences.setString('longitude', value["data"]["longitude"].toString());
         updatePrefrences.setString('role', value["data"]["role"].toString());
-        // updatePrefrences.setString('number', value["number"].toString());
+        updatePrefrences.setString(
+          'source',
+          value["data"]["source"]?.toString() ?? '',
+        );
         
         // Save stripe verification status for future use
-        updatePrefrences.setString('stripe_verification_session', value["data"]["stripe_verification_session"] ?? "");
         updatePrefrences.setString('stripe_verification_status', value["data"]["stripe_verification_status"] ?? "");
-        updatePrefrences.setBool('identity_verified', value["data"]["identity_verified"] == 1 || value["data"]["identity_verified"] == "1");
+        updatePrefrences.setBool('is_identity_verified', value["data"]["is_identity_verified"] == 1 || value["data"]["is_identity_verified"] == "1");
+        
+        if (context.mounted) {
+          await Provider.of<UserViewModel>(context, listen: false).getUser();
+        }
         
         // Always go to MainScreen after social signup - Stripe onboarding will be handled when user becomes provider
         Get.offAll(() => MainScreen());
       } else {
-        Utils.flushBarErrorMessage('Something went wrong', context);
+        showAppErrorSnackbar('Something went wrong');
       }
 
           if (kDebugMode) {}
         })
         .onError((error, stackTrace) {
           setSignUpLoading(false);
-          Utils.flushBarErrorMessage(error.toString(), context);
-          if (kDebugMode) {}
-        });
-  }
-
-  Future<void> signUpApiWithGuest(dynamic data, BuildContext context) async {
-    setSignUpLoading(true);
-
-    _myRepo
-        .signUpApiWithGuest(data)
-        .then((value) async {
-          setSignUpLoading(false);
-          if (value["message"].toString() == "Signin successfull") {
-            final userPreference = Provider.of<UserViewModel>(
-              context,
-              listen: false,
-            );
-            userPreference.saveUser(
-              UserModel(
-                token: "",
-                name: "Guest",
-                email: "",
-                id: value?["data"]?["id"].toString(),
-                role: "Guest",
-                isGuest: true,
-              ),
-            );
-
-            // Save Data To SharedPrefrences
-            // SharedPreferences updatePrefrences = await SharedPreferences.getInstance();
-            // updatePrefrences.setString('fullname', value["data"]["full_name"].toString());
-            // // updatePrefrences.setString('email', value["data"]["email"].toString());
-            // updatePrefrences.setString('id', value["data"]["id"].toString());
-            // updatePrefrences.setString('role', value["data"]["role"].toString());
-            // String? test = updatePrefrences.getString("id");
-            // log("For checking shared Prefrences " + test.toString());
-            loginType = "user";
-            Get.offAll(() => MainScreen());
-            // }
-          } else {
-            Utils.flushBarErrorMessage('Something went wrong', context);
-          }
-        })
-        .onError((error, stackTrace) {
-          setSignUpLoading(false);
-          Utils.flushBarErrorMessage(error.toString(), context);
+          showAppErrorSnackbar(error.toString());
           if (kDebugMode) {}
         });
   }
@@ -308,9 +398,9 @@ class AuthViewModel with ChangeNotifier {
   Future<void> forgetPasswordApi(
     dynamic data,
     BuildContext context,
-    route, {
-    bool isGuestUserFlow = false,
-  }) async {
+    route,
+  ) async {
+    if (_signUpLoading) return;
     setSignUpLoading(true);
 
     _myRepo
@@ -318,7 +408,7 @@ class AuthViewModel with ChangeNotifier {
         .then((value) {
           setSignUpLoading(false);
           if (value["message"].toString() == "Otp Send") {
-            Utils.flushBarSuccessMessage('OTP resent successfully', context);
+            showAppSuccessSnackbar('OTP sent successfully');
             route == "forgot"
                 ? Get.to(
                   () => OTPSCREEN(
@@ -335,48 +425,56 @@ class AuthViewModel with ChangeNotifier {
                     name: "",
                     password: data["password"],
                     role: "",
-                    isGuestUserFlow: isGuestUserFlow,
                   ),
                 );
           } else if (value["message"].toString() == "Email not Found") {
-            Utils.flushBarErrorMessage('Email not Found', context);
+            showAppErrorSnackbar('Email not Found');
+          } else if (value["message"].toString() == "this is a social auth account") {
+            showAppErrorSnackbar(
+              'This email is linked to a social sign-in account. Sign in with Google, Facebook, or Apple instead.'
+            );
           } else {
-            Utils.flushBarErrorMessage('Something went wrong', context);
+            showAppErrorSnackbar('Something went wrong');
           }
           if (kDebugMode) {}
         })
         .onError((error, stackTrace) {
           setSignUpLoading(false);
-          Utils.flushBarErrorMessage(error.toString() + "Ameer", context);
+          showAppErrorSnackbar(error.toString() + "Ameer");
           if (kDebugMode) {}
         });
   }
 
   Future<void> otpForgetPasswordApi(dynamic data, BuildContext context) async {
+    if (_signUpLoading) return;
     setSignUpLoading(true);
 
     _myRepo.ForgetPasswordotpApi(data)
         .then((value) {
           setSignUpLoading(false);
           if (value["message"].toString() == "otp correct") {
-            Utils.flushBarSuccessMessage('Otp Correct', context);
-            Get.to(() => CreatePasswordScreen(email: data["email"]));
+            Get.to(() => CreatePasswordScreen(
+                  email: data["email"],
+                  otp: data["otp"],
+                ));
           } else if (value["message"].toString() == "otp incorrect") {
-            Utils.flushBarErrorMessage('Invalid OTP', context);
+            showAppErrorSnackbar('Invalid OTP');
+          } else if (value["message"].toString() == "OTP expired") {
+            showAppErrorSnackbar('OTP expired. Request a new code.');
           } else {
-            Utils.flushBarErrorMessage('Something went wrong', context);
+            showAppErrorSnackbar('Something went wrong');
           }
-          //  Get.to(()=> OTPSCREEN()) ;
           if (kDebugMode) {}
         })
         .onError((error, stackTrace) {
           setSignUpLoading(false);
-          Utils.flushBarErrorMessage("Please Enter Otp", context);
+          showAppErrorSnackbar("Please Enter Otp");
           if (kDebugMode) {}
         });
   }
 
   Future<void> changePasswordAPi(dynamic data, BuildContext context) async {
+    if (_signUpLoading) return;
     setSignUpLoading(true);
 
     _myRepo
@@ -384,28 +482,27 @@ class AuthViewModel with ChangeNotifier {
         .then((value) {
           setSignUpLoading(false);
           if (value["message"].toString() == "Password Updated") {
-            Utils.flushBarErrorMessage(
-              'Password Changed Successfully',
-              context,
-            );
+            showAppSuccessSnackbar('Password Changed Successfully');
             Get.offAll(() => LoginScreen());
           } else if (value["message"].toString() == "Email not Found") {
-            Utils.flushBarErrorMessage('email  not found', context);
+            showAppErrorSnackbar('email  not found');
           } else if (value["message"].toString() ==
               "this is a social auth account") {
-            Utils.flushBarErrorMessage(
-              'This is a social auth account',
-              context,
+            showAppErrorSnackbar(
+              'This is a social auth account'
             );
+          } else if (value["message"].toString() == "invalid OTP") {
+            showAppErrorSnackbar('Invalid OTP');
+          } else if (value["message"].toString() == "OTP expired") {
+            showAppErrorSnackbar('OTP expired. Request a new code.');
           } else {
-            Utils.flushBarErrorMessage('Something went wrong', context);
+            showAppErrorSnackbar('Something went wrong');
           }
-          //  Get.to(()=> OTPSCREEN()) ;
           if (kDebugMode) {}
         })
         .onError((error, stackTrace) {
           setSignUpLoading(false);
-          Utils.flushBarErrorMessage(error.toString(), context);
+          showAppErrorSnackbar(error.toString());
           if (kDebugMode) {}
         });
   }
@@ -418,54 +515,61 @@ class AuthViewModel with ChangeNotifier {
         .then((value) {
           setSignUpLoading(false);
           if (value["result"].toString() == data["file"].toString()) {
-            Utils.flushBarSuccessMessage('Otp sent', context);
+            showAppSuccessSnackbar('Otp sent');
             Get.to(() => MyProfileScreen());
           } else if (value["message"].toString() == "Please upload a file!") {
-            Utils.flushBarErrorMessage('Please upload a file!', context);
+            showAppErrorSnackbar('Please upload a file!');
           } else {
-            Utils.flushBarErrorMessage('Something went wrong', context);
+            showAppErrorSnackbar('Something went wrong');
           }
-          //  Get.to(()=> OTPSCREEN()) ;
           if (kDebugMode) {}
         })
         .onError((error, stackTrace) {
           setSignUpLoading(false);
-          Utils.flushBarErrorMessage(error.toString(), context);
+          showAppErrorSnackbar(error.toString());
           if (kDebugMode) {}
         });
   }
 
-  Future<void> DeleteAccount(dynamic data, BuildContext context) async {
-    setSignUpLoading(true);
+  Future<void> requestAccountDeletion({
+    required BuildContext context,
+    String contactNumber = '',
+  }) async {
+    if (_accountDeletionLoading) return;
+    setAccountDeletionLoading(true);
 
-    _myRepo.DeleteAccount(data)
-        .then((value) async {
-          setSignUpLoading(false);
-          if (value["message"] == "User has been deleted" ||
-              value["message"] == "Vendor has been deleted") {
-            Utils.flushBarErrorMessage(value["message"].toString(), context);
-            SharedPreferences sharedPreferences =
-                await SharedPreferences.getInstance();
-            notifyListeners();
-            sharedPreferences.setString('token', "");
-            sharedPreferences.setString('role', "");
-            Get.to(() => LoginScreen());
+    final payload = contactNumber.trim().isNotEmpty
+        ? {'contact_number': contactNumber.trim()}
+        : <String, dynamic>{};
+
+    _myRepo
+        .submitAccountDeletionRequest(payload)
+        .then((value) {
+          setAccountDeletionLoading(false);
+          final message = value['message']?.toString() ?? '';
+          if (message == 'Inserted') {
+            showAppSuccessSnackbar(
+              'Your account deletion request has been submitted. Our team will review it shortly.'
+            );
           } else {
-            Utils.flushBarErrorMessage(value["message"].toString(), context);
+            showAppErrorSnackbar(
+              message.isNotEmpty ? message : 'Something went wrong'
+            );
           }
         })
         .onError((error, stackTrace) {
-          setSignUpLoading(false);
-          Utils.flushBarErrorMessage(error.toString(), context);
-          if (kDebugMode) {}
+          setAccountDeletionLoading(false);
+          showAppErrorSnackbar(
+            _accountDeletionErrorMessage(error ?? 'Something went wrong'),
+          );
         });
   }
 
   /// login will  be done as a guest
-  void loginAsGuest(BuildContext context) {
+  Future<void> loginAsGuest(BuildContext context) async {
     final userPreference = Provider.of<UserViewModel>(context, listen: false);
     userName = "Guest";
-    userPreference.saveUser(
+    await userPreference.saveUser(
       UserModel(
         token: "",
         name: "Guest",
@@ -476,6 +580,7 @@ class AuthViewModel with ChangeNotifier {
       ),
     );
 
+    loginType = "user";
     Get.offAll(() => MainScreen());
   }
 }

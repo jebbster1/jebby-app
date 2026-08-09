@@ -7,10 +7,13 @@ import 'package:jebby/Views/screens/agreements/rentalAgreement.dart';
 import 'package:jebby/Views/screens/agreements/termsAndConditions.dart';
 import 'package:jebby/Views/screens/agreements/transportAndInstallationPolicy.dart';
 import 'package:jebby/Views/screens/vendors/EditProduct.dart';
+import 'package:jebby/Views/screens/vendors/MyProducts.dart';
 import 'package:jebby/Views/screens/shared/Reviews.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/res/color.dart';
+import 'package:jebby/utils/overlay_support.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import '../../../model/getReviewsByProductId.dart' as review_model;
 
 import '../../../view_model/apiServices.dart';
@@ -41,23 +44,18 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
   bool isLoading = true;
   bool isError = false;
   bool emptyProdData = false;
-  bool relloading = true;
-  bool relError = false;
   late var prodID;
   List imagesList = [];
   List imagesListID = [];
-  List relProdArray = [];
   var categoryID = null;
   var subCategoryID = null;
   var name = null;
   var price = null;
   var specifications = null;
   var description = null;
-  var negotiation = null;
   var product_id = null;
   var images = null;
   var imageID = null;
-  var message = null;
   bool editVisibility = false;
   var length = "";
   var stars = "";
@@ -83,16 +81,85 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
     super.dispose();
   }
 
+  Future<void> _confirmAndDeleteProduct() async {
+    final listingName = name?.toString().trim();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Delete listing?',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w700,
+              fontSize: 18,
+              color: _titleDark,
+            ),
+          ),
+          content: Text(
+            listingName != null && listingName.isNotEmpty
+                ? 'Are you sure you want to delete "$listingName"? This cannot be undone.'
+                : 'Are you sure you want to delete this listing? This cannot be undone.',
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              color: _bodyGrey,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w600,
+                  color: _labelGrey,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(
+                'Delete',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  color: Colors.red.shade700,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    Loader.show();
+    try {
+      final error = await ApiRepository.shared.deleteProductsById(prodID);
+      if (!mounted) return;
+      if (error == null) {
+        Get.offAll(() => ProductListScreen(side: false));
+      } else {
+        showAppErrorSnackbar(error);
+      }
+    } finally {
+      Loader.hide();
+    }
+  }
+
   void getProducts(id) {
     setState(() {
       isLoading = true;
       isError = false;
       emptyProdData = false;
-      relloading = true;
-      relError = false;
       imagesList = [];
       imagesListID = [];
-      relProdArray = [];
     });
 
     ApiRepository.shared.getProductsById(
@@ -169,7 +236,7 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
                         .subcategoryId,
                 name = ApiRepository.shared.getProductsByIdList?.data![0].name,
                 price =
-                    ApiRepository.shared.getProductsByIdList!.data![0].price2
+                    ApiRepository.shared.getProductsByIdList!.data![0].price
                         .toString(),
                 specifications =
                     ApiRepository
@@ -182,25 +249,13 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
                         .shared
                         .getProductsByIdList
                         ?.data![0]
-                        .serviceAgreements,
-                negotiation =
-                    ApiRepository
-                        .shared
-                        .getProductsByIdList
-                        ?.data![0]
-                        .negotiation,
+                        .description,
                 product_id =
                     ApiRepository
                         .shared
                         .getProductsByIdList
                         ?.data![0]
                         .productId,
-                message =
-                    ApiRepository
-                        .shared
-                        .getProductsByIdList
-                        ?.data![0]
-                        .isMessage,
                 length =
                     ApiRepository.shared.getProductsByIdList!.data![0].length
                         .toString(),
@@ -215,7 +270,6 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
                         .delivery_charges
                         .toString(),
                 _loadRatingDistribution(widget.id.toString()),
-                getRelProducts(),
                 images = imagesList,
                 imageID = imagesListID,
                 setState(() {
@@ -237,40 +291,6 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
     );
   }
 
-  void getRelProducts() {
-    ApiRepository.shared.getRelatedProducts(
-      (List) => {
-        if (this.mounted)
-          {
-            if (List.data?.length == 0)
-              {
-                setState(() {
-                  relloading = false;
-                  relError = false;
-                }),
-              }
-            else
-              {
-                setState(() {
-                  relloading = false;
-                  relError = false;
-                }),
-              },
-          },
-      },
-      (error) => {
-        if (error != null)
-          {
-            setState(() {
-              isLoading = false;
-              isError = true;
-            }),
-          },
-      },
-      ApiRepository.shared.getProductsByIdList?.data![0].productId.toString(),
-    );
-  }
-
   double get _avgRating => double.tryParse(stars.toString())?.clamp(0, 5) ?? 0;
 
   int get _reviewCount =>
@@ -278,10 +298,32 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
           ? _reviewTotalFromApi
           : (int.tryParse(length.toString()) ?? 0);
 
-  List<MapEntry<String, String>> _parsedSpecs() {
-    final raw = specifications?.toString() ?? '';
+  String _normalizedSpecificationsRaw() {
+    final raw = specifications?.toString().trim() ?? '';
+    if (raw.isEmpty) return '';
+    return raw;
+  }
+
+  List<MapEntry<String, String>> _parseSpecificationsString(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return const [];
+
+    final commaSeparated = RegExp(r'(?:^|, )([^:]+):\s*(.*?)(?=, [^:]+:|$)');
+    final commaMatches = commaSeparated.allMatches(text).toList();
+    if (commaMatches.isNotEmpty) {
+      return commaMatches
+          .map((match) {
+            final key = match.group(1)?.trim() ?? '';
+            final value = match.group(2)?.trim() ?? '';
+            if (key.isEmpty) return null;
+            return MapEntry(key, value);
+          })
+          .whereType<MapEntry<String, String>>()
+          .toList();
+    }
+
     final out = <MapEntry<String, String>>[];
-    for (final line in raw.split(RegExp(r'\r?\n'))) {
+    for (final line in text.split(RegExp(r'\r?\n'))) {
       final t = line.trim();
       if (t.isEmpty) continue;
       final idx = t.indexOf(':');
@@ -291,16 +333,11 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
         );
       }
     }
-    if (out.isEmpty) {
-      return const [
-        MapEntry('Material', 'Wooden'),
-        MapEntry('Condition', 'New'),
-        MapEntry('Finish', 'Simple Finish'),
-        MapEntry('Style', 'Minimal'),
-      ];
-    }
     return out;
   }
+
+  List<MapEntry<String, String>> _parsedSpecs() =>
+      _parseSpecificationsString(_normalizedSpecificationsRaw());
 
   void _loadRatingDistribution(String productId) {
     ApiRepository.shared.reviewsByProductId(productId, (
@@ -465,9 +502,19 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  ...specs.map(
-                                    (e) => _specDividerRow(e.key, e.value),
-                                  ),
+                                  if (specs.isEmpty)
+                                    Text(
+                                      'No specifications listed.',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w400,
+                                        color: _bodyGrey,
+                                      ),
+                                    )
+                                  else
+                                    ...specs.map(
+                                      (e) => _specDividerRow(e.key, e.value),
+                                    ),
                                   const SizedBox(height: 8),
                                   Divider(
                                     height: 1,
@@ -539,10 +586,8 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
                                           color: _titleDark,
                                         ),
                                       ),
-                                      iconColor: const Color(0xFFC4C4CC),
-                                      collapsedIconColor: const Color(
-                                        0xFFC4C4CC,
-                                      ),
+                                      iconColor: _titleDark,
+                                      collapsedIconColor: _titleDark,
                                       children: [
                                         const SizedBox(height: 4),
                                         Container(
@@ -805,11 +850,7 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                   ),
-                                  onPressed: () {
-                                    ApiRepository.shared.deleteProductsById(
-                                      prodID,
-                                    );
-                                  },
+                                  onPressed: _confirmAndDeleteProduct,
                                   child: Text(
                                     'Delete',
                                     style: GoogleFonts.inter(
@@ -843,12 +884,9 @@ class _ProductDetail2ScreenState extends State<ProductDetail2Screen> {
                                         price: price,
                                         specifications: specifications,
                                         description: description,
-                                        negotiation: negotiation,
                                         product_id: product_id,
-                                        relProd: [],
                                         images: images,
                                         imageID: imageID,
-                                        messageStatus: message,
                                         delivery_charges: delivery_charges,
                                       ),
                                     );

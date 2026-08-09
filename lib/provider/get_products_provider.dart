@@ -10,7 +10,6 @@ class ProductProvider extends ChangeNotifier {
 
     notifyListeners();
     debugPrint("running");
-    // return data;
   }
 
   fetchproducts()

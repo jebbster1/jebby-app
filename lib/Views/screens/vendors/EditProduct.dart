@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -21,6 +21,11 @@ import '../../../model/productDeleteModelImage.dart';
 import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
 import '../../../view_model/apiServices.dart';
+import 'package:jebby/Views/widgets/address_autocomplete_field.dart';
+import 'package:jebby/utils/api_headers.dart';
+import 'package:jebby/utils/google_places_address.dart';
+import 'package:jebby/utils/product_upload_filename.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import '../../../view_model/user_view_model.dart';
 
 class EditProductScreen extends StatefulWidget {
@@ -30,12 +35,9 @@ class EditProductScreen extends StatefulWidget {
   final dynamic price;
   final dynamic specifications;
   final dynamic description;
-  final dynamic negotiation;
   final dynamic product_id;
-  final dynamic relProd;
   final dynamic images;
   final dynamic imageID;
-  final dynamic messageStatus;
   final dynamic delivery_charges;
 
   EditProductScreen({
@@ -45,12 +47,9 @@ class EditProductScreen extends StatefulWidget {
     this.price,
     this.specifications,
     this.description,
-    this.negotiation,
     this.product_id,
-    this.relProd,
     this.images,
     this.imageID,
-    this.messageStatus,
     this.delivery_charges,
   });
 
@@ -60,8 +59,6 @@ class EditProductScreen extends StatefulWidget {
 
 class _EditProductScreenState extends State<EditProductScreen> {
   String Url = dotenv.env['baseUrlM'] ?? 'No url found';
-  bool insRentSwitchNot = true; // Match add/edit screenshot default (switch ON)
-  bool messageSwitchNot = false;
   bool product_update_button = false;
   bool img_button = false;
   bool imgLoader = false;
@@ -88,6 +85,8 @@ class _EditProductScreenState extends State<EditProductScreen> {
   late var sub_id;
   late var sub_length;
   List<XFile> imageFileList = [];
+  /// Gallery index to insert each pending upload at (`null` = append).
+  List<int?> _uploadInsertAt = [];
   List imagesPath = [];
   List<String> _existingImageUrls = [];
   List<dynamic> _existingImageIds = [];
@@ -101,40 +100,22 @@ class _EditProductScreenState extends State<EditProductScreen> {
   TextEditingController nameController = TextEditingController();
   TextEditingController specsController = TextEditingController();
   TextEditingController descriptionController = TextEditingController();
-  TextEditingController negotiationController = TextEditingController();
   TextEditingController rentPriceController = TextEditingController();
   TextEditingController deliverychargesController = TextEditingController();
-  TextEditingController price_1_Controller = TextEditingController();
-  TextEditingController price_2_Controller = TextEditingController();
-  TextEditingController discountController = TextEditingController();
-  TextEditingController perController = TextEditingController();
   TextEditingController SecurityDepositeController = TextEditingController();
 
   var pasd =
-      ApiRepository.shared.getProductsByIdList?.data![0].pastart.toString();
+      ApiRepository.shared.getProductsByIdList?.data![0].availableFrom.toString();
   var paed =
-      ApiRepository.shared.getProductsByIdList?.data![0].paend.toString();
+      ApiRepository.shared.getProductsByIdList?.data![0].availableTo.toString();
   DateTime _calendarMonth = DateTime(DateTime.now().year, DateTime.now().month);
   bool _isSelectingEnd = false;
-  var dasd =
-      ApiRepository.shared.getProductsByIdList?.data![0].dastart.toString();
-  var daed =
-      ApiRepository.shared.getProductsByIdList?.data![0].daend.toString();
-  var price_1 =
-      ApiRepository.shared.getProductsByIdList?.data![0].price1.toString();
-  var per = ApiRepository.shared.getProductsByIdList?.data![0].per.toString();
-  var dis =
-      ApiRepository.shared.getProductsByIdList?.data![0].discount.toString();
-  var freePU = ApiRepository.shared.getProductsByIdList?.data![0].fp.toString();
-  var locationBD =
-      ApiRepository.shared.getProductsByIdList?.data![0].lbd.toString();
+  var isDelivery =
+      ApiRepository.shared.getProductsByIdList?.data![0].isDelivery.toString();
 
   var security_deposit =
       ApiRepository.shared.getProductsByIdList?.data![0].security_deposit
           .toString();
-
-  var price_2 =
-      ApiRepository.shared.getProductsByIdList?.data![0].price.toString();
 
   // Index of the image currently shown in the big preview.
   int _activeImageIndex = 0;
@@ -144,17 +125,84 @@ class _EditProductScreenState extends State<EditProductScreen> {
   String? cat_value;
   String? sub_cat_value;
 
-  // -----------------------------
-  // Redesigned UI state (matches screenshots)
-  // -----------------------------
   bool productAvailabilitySwitch = true;
 
   // Location (for Location Based Delivery)
   final TextEditingController _locationController = TextEditingController();
+  ParsedUsAddress? _resolvedLocation;
   String? locationLat;
   String? locationLng;
-  List<dynamic> _placeList = [];
-  String _sessionToken = '1234567890';
+
+  void _clearResolvedLocation() {
+    setState(() {
+      _resolvedLocation = const ParsedUsAddress();
+      locationLat = null;
+      locationLng = null;
+    });
+  }
+
+  Future<void> _applySelectedLocation(ParsedUsAddress address) async {
+    setState(() {
+      _resolvedLocation = address;
+      _locationController.text = address.displayLine;
+      if (address.hasCoordinates) {
+        locationLat = address.latitude!.toString();
+        locationLng = address.longitude!.toString();
+      } else {
+        locationLat = null;
+        locationLng = null;
+      }
+    });
+  }
+
+  void _showFileSizeAlert(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(
+            'File Size Exceeded',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+          content: Text(
+            message,
+            style: GoogleFonts.inter(fontWeight: FontWeight.w400),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text(
+                'OK',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  InputDecoration get _listingLocationDecoration => InputDecoration(
+        hintText: 'Enter address',
+        hintStyle: GoogleFonts.inter(
+          fontSize: 14,
+          color: Colors.grey.shade600,
+        ),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: darkBlue, width: 1.5),
+        ),
+      );
 
   // Dropdown values shown in the second screenshot.
   String materialValue = "Wooden";
@@ -251,52 +299,41 @@ class _EditProductScreenState extends State<EditProductScreen> {
     super.initState();
   }
 
-  bool negotiationVisibility = true;
-
   void assign() {
     _loadExistingImages();
-    switchnot = widget.negotiation.toString() == "0" ? true : false;
-    negotiationVisibility = widget.negotiation.toString() == "0" ? false : true;
-    messageSwitchNot = widget.messageStatus == 1 ? true : false;
-    price_2 =
-        ApiRepository.shared.getProductsByIdList?.data![0].price.toString();
-    price_1 =
-        ApiRepository.shared.getProductsByIdList?.data![0].price1.toString();
-    per = ApiRepository.shared.getProductsByIdList?.data![0].per.toString();
-    dis =
-        ApiRepository.shared.getProductsByIdList?.data![0].discount.toString();
     pasd =
-        ApiRepository.shared.getProductsByIdList?.data![0].pastart.toString();
-    paed = ApiRepository.shared.getProductsByIdList?.data![0].paend.toString();
-    dasd =
-        ApiRepository.shared.getProductsByIdList?.data![0].dastart.toString();
-    daed = ApiRepository.shared.getProductsByIdList?.data![0].daend.toString();
-
-    freePU = ApiRepository.shared.getProductsByIdList?.data![0].fp.toString();
-    locationBD =
-        ApiRepository.shared.getProductsByIdList?.data![0].lbd.toString();
+        ApiRepository.shared.getProductsByIdList?.data![0].availableFrom.toString();
+    paed = ApiRepository.shared.getProductsByIdList?.data![0].availableTo.toString();
+    isDelivery =
+        ApiRepository.shared.getProductsByIdList?.data![0].isDelivery.toString();
 
     nameController.text = widget.name;
     specsController.text = widget.specifications;
     descriptionController.text = widget.description;
     rentPriceController.text = widget.price.toString();
-    negotiationController.text = widget.negotiation.toString();
-    price_2_Controller.text = price_2.toString();
-    price_1_Controller.text = price_1.toString();
-    perController.text = per.toString();
-    discountController.text = dis.toString();
     selected_id = widget.category_id.toString();
     selected_sub_id = widget.sub_category_id.toString();
     _groupValue =
-        freePU != 0
-            ? int.parse(freePU.toString())
-            : int.parse(locationBD.toString());
+        (ApiRepository.shared.getProductsByIdList?.data![0].isDelivery == 1) ? 1 : 0;
     deliverychargesController.text = widget.delivery_charges;
     SecurityDepositeController.text = security_deposit.toString();
     final data0 = ApiRepository.shared.getProductsByIdList?.data?[0];
     if (data0 != null) {
-      if (data0.latitude != null) locationLat = data0.latitude.toString();
-      if (data0.longitude != null) locationLng = data0.longitude.toString();
+      final listingAddress = data0.address?.toString().trim() ?? '';
+      if (listingAddress.isNotEmpty) {
+        _locationController.text = listingAddress;
+        _resolvedLocation = ParsedUsAddress(
+          formattedAddress: listingAddress,
+          latitude: double.tryParse(data0.latitude?.toString() ?? ''),
+          longitude: double.tryParse(data0.longitude?.toString() ?? ''),
+        );
+      }
+      if (data0.latitude != null) {
+        locationLat = data0.latitude.toString();
+      }
+      if (data0.longitude != null) {
+        locationLng = data0.longitude.toString();
+      }
     }
   }
 
@@ -306,6 +343,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
     _existingImageUrls = [];
     _existingImageIds = [];
     _deletedImageIds.clear();
+    _uploadInsertAt.clear();
     _imagesModified = false;
 
     final rawImages = widget.images;
@@ -404,37 +442,13 @@ class _EditProductScreenState extends State<EditProductScreen> {
           imagesPath.removeAt(localIndex);
         }
         imageFileList.removeAt(localIndex);
+        if (localIndex < _uploadInsertAt.length) {
+          _uploadInsertAt.removeAt(localIndex);
+        }
       }
     }
     _markImagesModified();
     _adjustActiveIndexAfterRemoval(index);
-  }
-
-  void _onLocationChanged() {
-    getSuggestion(_locationController.text);
-  }
-
-  void getSuggestion(String input) async {
-    final kPLACES_API_KEY =
-        dotenv.env['kPLACES_API_KEY'] ?? 'No secret key found';
-    if (input.isEmpty) {
-      setState(() => _placeList = []);
-      return;
-    }
-    try {
-      final baseURL =
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json';
-      final request =
-          '$baseURL?input=$input&key=$kPLACES_API_KEY&sessiontoken=$_sessionToken';
-      final response = await http.get(Uri.parse(request));
-      if (response.statusCode == 200 && mounted) {
-        setState(() {
-          _placeList = json.decode(response.body)['predictions'] ?? [];
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _placeList = []);
-    }
   }
 
   @override
@@ -642,13 +656,27 @@ class _EditProductScreenState extends State<EditProductScreen> {
         if (remaining <= 0) return;
 
         final imagesToAdd = selectedImages.take(remaining).toList();
+        var rejectedOversized = false;
         for (XFile image in imagesToAdd) {
           final tempImage = File(image.path);
+          final fileSize = await tempImage.length();
+          if (fileSize > 7 * 1024 * 1024) {
+            rejectedOversized = true;
+            continue;
+          }
           imagesPath.add(tempImage);
+          imageFileList.add(image);
+          _uploadInsertAt.add(null);
         }
-        imageFileList.addAll(imagesToAdd);
-        _markImagesModified();
-        _activeImageIndex = _totalImageCount - 1;
+        if (rejectedOversized) {
+          _showFileSizeAlert(
+            'Selected file is larger than 7MB. Please select a smaller file.',
+          );
+        }
+        if (imageFileList.isNotEmpty) {
+          _markImagesModified();
+          _activeImageIndex = _totalImageCount - 1;
+        }
       }
       setState(() {});
     } catch (e) {}
@@ -665,9 +693,17 @@ class _EditProductScreenState extends State<EditProductScreen> {
       );
       if (image == null) return;
       final tempImage = File(image.path);
+      final fileSize = await tempImage.length();
+      if (fileSize > 7 * 1024 * 1024) {
+        _showFileSizeAlert(
+          'Selected file is larger than 7MB. Please select a smaller file.',
+        );
+        return;
+      }
       setState(() {
         imagesPath.add(tempImage);
         imageFileList.add(image);
+        _uploadInsertAt.add(null);
         _markImagesModified();
         _activeImageIndex = _totalImageCount - 1;
       });
@@ -682,11 +718,19 @@ class _EditProductScreenState extends State<EditProductScreen> {
       );
       if (image == null) return;
       final tempImage = File(image.path);
+      final fileSize = await tempImage.length();
+      if (fileSize > 7 * 1024 * 1024) {
+        _showFileSizeAlert(
+          'Selected file is larger than 7MB. Please select a smaller file.',
+        );
+        return;
+      }
       setState(() {
         _markImagesModified();
         if (!_hasImages) {
           imagesPath = [tempImage];
           imageFileList = [image];
+          _uploadInsertAt = [0];
           _activeImageIndex = 0;
           return;
         }
@@ -702,6 +746,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
           }
           imagesPath.add(tempImage);
           imageFileList.add(image);
+          _uploadInsertAt.add(idx);
           _activeImageIndex = _totalImageCount - 1;
         } else {
           final localIdx = idx - _existingImageUrls.length;
@@ -719,7 +764,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
   ) async {
     final response = await http.get(
       Uri.parse(AppUrl.getProductsByID + id),
-      headers: {'Content-type': "application/json"},
+      headers: await ApiHeaders.json(),
     );
     if (response.statusCode == 200) {
       try {
@@ -745,12 +790,15 @@ class _EditProductScreenState extends State<EditProductScreen> {
     setState(() {
       imgLoader = true;
     });
-    final request = json.encode(<String, dynamic>{"id": id});
+    final request = json.encode(<String, dynamic>{
+      "id": id,
+      "product_id": widget.product_id.toString(),
+    });
 
     final response = await http.post(
       Uri.parse(AppUrl.productDeleteImage),
       body: request,
-      headers: {'Content-type': "application/json"},
+      headers: await ApiHeaders.json(),
     );
     if (response.statusCode == 200) {
       try {
@@ -781,11 +829,14 @@ class _EditProductScreenState extends State<EditProductScreen> {
   }
 
   Future<bool> _deleteRemoteImageSilently(String imageId) async {
-    final request = json.encode(<String, dynamic>{"id": imageId});
+    final request = json.encode(<String, dynamic>{
+      "id": imageId,
+      "product_id": widget.product_id.toString(),
+    });
     final response = await http.post(
       Uri.parse(AppUrl.productDeleteImage),
       body: request,
-      headers: {'Content-type': "application/json"},
+      headers: await ApiHeaders.json(),
     );
     return response.statusCode == 200;
   }
@@ -794,35 +845,52 @@ class _EditProductScreenState extends State<EditProductScreen> {
     if (!_imagesModified) return true;
 
     try {
+      final idsToDelete = List<dynamic>.from(_deletedImageIds)
+        ..sort((a, b) {
+          final ai = int.tryParse(a?.toString() ?? '') ?? -1;
+          final bi = int.tryParse(b?.toString() ?? '') ?? -1;
+          return bi.compareTo(ai);
+        });
+      for (final imageId in idsToDelete) {
+        if (imageId == null) continue;
+        final deleted = await _deleteRemoteImageSilently(imageId.toString());
+        if (!deleted) return false;
+      }
+      _deletedImageIds.clear();
+
       if (imageFileList.isNotEmpty) {
         image_document = [];
         for (final file in imageFileList) {
           image_document.add(
             await d.MultipartFile.fromFile(
               file.path,
-              filename: DateTime.now().millisecondsSinceEpoch.toString(),
+              filename: productUploadFilename(file.path),
             ),
           );
         }
 
-        final formData = d.FormData.fromMap({
-          "file": image_document,
-          "id": widget.product_id.toString(),
-        });
+        final formData = d.FormData();
+        formData.fields
+          ..add(MapEntry('id', widget.product_id.toString()))
+          ..add(MapEntry('insert_at', jsonEncode(_uploadInsertAt)));
+        for (final part in image_document) {
+          formData.files.add(MapEntry('file', part));
+        }
 
         final response = await d.Dio().post(
           AppUrl.productUpdateImage,
           data: formData,
+          options: d.Options(
+            contentType: 'multipart/form-data',
+            headers: await ApiHeaders.authOnly(),
+          ),
         );
         if (response.statusCode != 200) return false;
-      }
 
-      for (final imageId in List<dynamic>.from(_deletedImageIds)) {
-        if (imageId == null) continue;
-        final deleted = await _deleteRemoteImageSilently(imageId.toString());
-        if (!deleted) return false;
+        imageFileList.clear();
+        imagesPath.clear();
+        _uploadInsertAt.clear();
       }
-      _deletedImageIds.clear();
 
       return true;
     } catch (_) {
@@ -837,10 +905,12 @@ class _EditProductScreenState extends State<EditProductScreen> {
     image_document = [];
     if (imagesPath.length > 0) {
       for (int i = 0; i < imagesPath.length; i++) {
-        String uniqueName = DateTime.now().millisecondsSinceEpoch.toString();
         var path = imagesPath[i].path;
         image_document.add(
-          await d.MultipartFile.fromFile(path, filename: uniqueName),
+          await d.MultipartFile.fromFile(
+            path,
+            filename: productUploadFilename(path),
+          ),
         );
       }
       try {
@@ -862,25 +932,28 @@ class _EditProductScreenState extends State<EditProductScreen> {
           (error) {},
           widget.product_id.toString(),
         );
-        final snackBar = new SnackBar(content: new Text("Images Updated"));
-        ScaffoldMessenger.of(context).showSnackBar(snackBar);
+        showAppSuccessSnackbar('Images updated.');
       } catch (e) {
-        final snackBar = new SnackBar(
-          content: new Text("Error in uploading images"),
-        );
-        ScaffoldMessenger.of(context).showSnackBar(snackBar);
+        showAppErrorSnackbar('Error uploading images.');
       }
-    } ////image picker
+    } 
     else {
-      final snackBar = new SnackBar(
-        content: new Text("Select Images To Upload"),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
+      showAppErrorSnackbar('Select images to upload.', title: 'Required');
     }
 
     setState(() {
       img_button = false;
     });
+  }
+
+  void _showError(String message) =>
+      showAppErrorSnackbar(message, title: 'Required');
+
+  bool _isValidIntPrice(String value, {required bool required}) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return !required;
+    final parsed = int.tryParse(trimmed);
+    return parsed != null && parsed >= 0;
   }
 
   prodUpdate() async {
@@ -889,12 +962,23 @@ class _EditProductScreenState extends State<EditProductScreen> {
     });
 
     if (!_hasImages) {
-      Get.snackbar(
-        'Required',
-        'You need to select at least 1 image',
-        snackPosition: SnackPosition.BOTTOM,
-        duration: const Duration(seconds: 2),
-      );
+      _showError('You need to select at least 1 image');
+      setState(() => product_update_button = false);
+      return;
+    }
+
+    if (!_isValidIntPrice(rentPriceController.text, required: true)) {
+      _showError('Please enter a valid rent price');
+      setState(() => product_update_button = false);
+      return;
+    }
+    if (!_isValidIntPrice(SecurityDepositeController.text, required: true)) {
+      _showError('Please enter a valid security deposit');
+      setState(() => product_update_button = false);
+      return;
+    }
+    if (!_isValidIntPrice(deliverychargesController.text, required: true)) {
+      _showError('Please enter a valid delivery fee');
       setState(() => product_update_button = false);
       return;
     }
@@ -905,11 +989,12 @@ class _EditProductScreenState extends State<EditProductScreen> {
         DateTime.parse(
           pasd.toString(),
         ).isAtSameMomentAs(DateTime.parse(paed.toString()))) {
-      final snackBar = SnackBar(
-        content: Text("End Date must be greater than Start Date"),
-      );
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
-    } else if (id != null &&
+      _showError('End Date must be greater than Start Date');
+      setState(() => product_update_button = false);
+      return;
+    }
+
+    if (id != null &&
         widget.category_id != null &&
         selected_sub_id.toString().isNotEmpty &&
         nameController.text.toString().isNotEmpty &&
@@ -922,17 +1007,13 @@ class _EditProductScreenState extends State<EditProductScreen> {
         widget.product_id != null &&
         id != null &&
         selected_sub_id != null &&
-        freePU != null &&
-        locationBD != null &&
+        isDelivery != null &&
         pasd != null &&
         paed != null
     ) {
-      if (locationBD == "1" && (locationLat == null || locationLng == null)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Please enter and select a location for delivery"),
-          ),
-        );
+      if (_locationController.text.trim().isEmpty ||
+          _resolvedLocation?.hasResolvedMapLocation != true) {
+        _showError(ParsedUsAddress.selectFromSuggestionsMessage);
         setState(() => product_update_button = false);
         return;
       }
@@ -941,9 +1022,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
         final imagesSynced = await _syncProductImages();
         if (!imagesSynced) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to update product images')),
-            );
+            showAppErrorSnackbar('Failed to update product images');
           }
           setState(() => product_update_button = false);
           return;
@@ -958,35 +1037,22 @@ class _EditProductScreenState extends State<EditProductScreen> {
         rentPriceController.text.toString(),
         specsController.text.toString(),
         descriptionController.text.toString(),
-        negotiationVisibility == true
-            ? negotiationController.text.toString().isEmpty
-                ? "0"
-                : negotiationController.text.toString()
-            : "0",
         widget.product_id,
-        [],
         widget.product_id,
         id,
-        "0",
-        "0",
-        selected_sub_id,
-        freePU,
-        locationBD,
+        isDelivery == "1" ? 1 : 0,
         pasd,
         paed,
-        pasd,
-        paed,
-        "0",
-        "0",
-        "1",
         deliverychargesController.text.toString(),
         SecurityDepositeController.text.toString(),
-        locationLat ?? "0",
-        locationLng ?? "0",
+        _locationController.text.trim(),
+        locationLat ?? "",
+        locationLng ?? "",
       );
     } else {
-      final snackBar = new SnackBar(content: new Text("Fields can't be empty"));
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
+      _showError("Fields can't be empty");
+      setState(() => product_update_button = false);
+      return;
     }
 
     setState(() {
@@ -1025,7 +1091,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xfff5f5f5),
+      backgroundColor: Colors.white,
 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -1308,7 +1374,8 @@ class _EditProductScreenState extends State<EditProductScreen> {
                   },
                 ),
               ),
-
+            
+            SizedBox(height: 10),
             /// PRODUCT NAME
             Text(
               "Product Name",
@@ -1423,6 +1490,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
               child: TextField(
                 controller: rentPriceController,
                 keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.white,
@@ -1493,6 +1561,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
                         child: TextField(
                           controller: SecurityDepositeController,
                           keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: Colors.white,
@@ -1572,6 +1641,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
                         child: TextField(
                           controller: deliverychargesController,
                           keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: Colors.white,
@@ -1631,60 +1701,6 @@ class _EditProductScreenState extends State<EditProductScreen> {
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
-
-            SizedBox(height: 20),
-
-            /// INSTANT RENT SWITCH
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.bolt_rounded, size: 30, color: darkBlue),
-                    SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              'Instant Rent',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'We provide sturdy and comfortable wood',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                SizedBox(width: 10),
-                CupertinoSwitch(
-                  value: insRentSwitchNot,
-                  activeColor: darkBlue,
-                  thumbColor: Colors.white,
-                  trackColor: lightBlue,
-                  onChanged: (value) {
-                    setState(() {
-                      insRentSwitchNot = value;
-                    });
-                  },
                 ),
               ],
             ),
@@ -1836,8 +1852,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
                       onTap: () {
                         setState(() {
                           _groupValue = 0;
-                          locationBD = "0";
-                          freePU = "1";
+                          isDelivery = "0";
                         });
                       },
                       child: Container(
@@ -1870,8 +1885,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
                       onTap: () {
                         setState(() {
                           _groupValue = 1;
-                          freePU = "0";
-                          locationBD = "1";
+                          isDelivery = "1";
                         });
                       },
                       child: Container(
@@ -1885,7 +1899,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
                           borderRadius: BorderRadius.circular(18),
                         ),
                         child: Text(
-                          "Location based",
+                          "Delivery",
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
                             fontSize: 16,
@@ -1905,99 +1919,39 @@ class _EditProductScreenState extends State<EditProductScreen> {
 
             SizedBox(height: 14),
 
-            // Location (for Location Based Delivery)
-            if (_groupValue == 1) ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  "Location",
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    color: Colors.black,
-                  ),
-                  textAlign: TextAlign.left,
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                "Listing location",
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: Colors.black,
+                ),
+                textAlign: TextAlign.left,
+              ),
+            ),
+            SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                "Where renters pick up this item, or where you deliver from.",
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
                 ),
               ),
-              SizedBox(height: 6),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade400, width: 1),
-                ),
-                child: TextField(
-                  controller: _locationController,
-                  onChanged: (_) => _onLocationChanged(),
-                  decoration: InputDecoration(
-                    hintText: "Enter address",
-                    hintStyle: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 14,
-                    ),
-                  ),
-                  style: GoogleFonts.inter(fontSize: 14),
-                ),
-              ),
-              if (_placeList.isNotEmpty)
-                Container(
-                  constraints: BoxConstraints(maxHeight: 200),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300, width: 1),
-                  ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _placeList.length,
-                    itemBuilder: (context, index) {
-                      final prediction = _placeList[index];
-                      final name = prediction["description"] ?? "";
-                      return ListTile(
-                        dense: true,
-                        leading: Icon(
-                          Icons.pin_drop,
-                          color: kprimaryColor,
-                          size: 22,
-                        ),
-                        title: Text(
-                          name,
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            color: Colors.black87,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        onTap: () async {
-                          _locationController.text = name;
-                          try {
-                            List<Location> locations =
-                                await locationFromAddress(name);
-                            if (locations.isNotEmpty && mounted) {
-                              setState(() {
-                                locationLat =
-                                    locations.last.latitude.toString();
-                                locationLng =
-                                    locations.last.longitude.toString();
-                                _placeList = [];
-                              });
-                            }
-                          } catch (e) {
-                            if (mounted) setState(() => _placeList = []);
-                          }
-                        },
-                      );
-                    },
-                  ),
-                ),
-              SizedBox(height: 14),
-            ],
+            ),
+            SizedBox(height: 6),
+            AddressAutocompleteField(
+              controller: _locationController,
+              resolvedAddress: _resolvedLocation,
+              onEditingStarted: _clearResolvedLocation,
+              onAddressSelected: _applySelectedLocation,
+              hint: 'Enter address',
+              decoration: _listingLocationDecoration,
+            ),
+            SizedBox(height: 14),
 
             _buildAvailabilityCalendar(MediaQuery.of(context).size.width),
 
@@ -2067,36 +2021,50 @@ class _EditProductScreenState extends State<EditProductScreen> {
               });
             }),
             SizedBox(height: 16),
+          ],
+        ),
+      ),
 
-            /// UPDATE BUTTON
-            SizedBox(
+      bottomNavigationBar: Material(
+        elevation: 12,
+        shadowColor: Colors.black26,
+        color: Colors.white,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: SizedBox(
               width: double.infinity,
-              height: 55,
               child: ElevatedButton(
+                onPressed: product_update_button ? null : prodUpdate,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kprimaryColor,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-
-                onPressed: () {
-                  product_update_button ? null : prodUpdate();
-                },
-
-                child: Text(
-                  product_update_button ? "Updating..." : "List Product",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
+                child: product_update_button
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        'Update Product',
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
               ),
             ),
-
-            SizedBox(height: 40),
-          ],
+          ),
         ),
       ),
     );

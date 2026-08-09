@@ -1,17 +1,18 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
-import 'package:http/http.dart' as http;
 import 'package:jebby/Views/helper/colors.dart';
 import 'package:jebby/Views/screens/vendors/MyProducts.dart';
 import 'package:jebby/Views/screens/vendors/listing_success.dart';
 import 'package:jebby/Views/screens/vendors/vendorhome.dart';
+import 'package:jebby/Views/widgets/address_autocomplete_field.dart';
+import 'package:jebby/utils/google_places_address.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/view_model/apiServices.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -23,6 +24,7 @@ import 'package:dio/dio.dart' as d;
 import 'package:provider/provider.dart';
 import '../../../view_model/user_view_model.dart';
 import 'package:jebby/Services/analytics_service.dart';
+import 'package:jebby/utils/api_headers.dart';
 
 class AddProductScreen extends StatefulWidget {
   /// When true, step-1 back replaces the stack with [ProductListScreen].
@@ -50,7 +52,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final ImagePicker imagePicker = ImagePicker();
   List<XFile> imageFileList = [];
   List imagesPath = [];
-  bool insRentSwitchNot = true;
   bool isError = false;
   bool isLoading = true;
   bool sub_categoryLoader = true;
@@ -79,7 +80,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
       TextEditingController();
   final TextEditingController deliveryChargesController =
       TextEditingController();
-  final TextEditingController negotiationController = TextEditingController();
 
   List<dynamic> image_document = [];
 
@@ -87,8 +87,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   late final PageController _pageController;
 
   int _groupValue = 0;
-  String freePU = "1";
-  String locationBD = "0";
+  String isDelivery = "0";
   int _activeImageIndex = 0;
 
   String pasd = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -99,10 +98,47 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool _isSelectingEnd = false;
 
   final TextEditingController _locationController = TextEditingController();
+  ParsedUsAddress? _resolvedLocation;
   String? locationLat;
   String? locationLng;
-  List<dynamic> _placeList = [];
-  String _sessionToken = '1234567890';
+
+  void _clearResolvedLocation() {
+    setState(() {
+      _resolvedLocation = const ParsedUsAddress();
+      locationLat = null;
+      locationLng = null;
+    });
+  }
+
+  Future<void> _applySelectedLocation(ParsedUsAddress address) async {
+    setState(() {
+      _resolvedLocation = address;
+      _locationController.text = address.displayLine;
+      if (address.hasCoordinates) {
+        locationLat = address.latitude!.toString();
+        locationLng = address.longitude!.toString();
+      } else {
+        locationLat = null;
+        locationLng = null;
+      }
+    });
+  }
+
+  InputDecoration get _listingLocationDecoration => InputDecoration(
+        hintText: 'Enter address',
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: darkBlue, width: 1.5),
+        ),
+      );
 
   String materialValue = "Wooden";
   String conditionValue = "New";
@@ -340,6 +376,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
       );
       if (image == null) return;
       final tempImage = File(image.path);
+      final fileSize = await tempImage.length();
+      if (fileSize > 7 * 1024 * 1024) {
+        _showFileSizeAlert(
+          'Selected file is larger than 7MB. Please select a smaller file.',
+        );
+        return;
+      }
       setState(() {
         imagesPath.add(tempImage);
         imageFileList.add(image);
@@ -355,6 +398,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
       );
       if (image == null) return;
       final tempImage = File(image.path);
+      final fileSize = await tempImage.length();
+      if (fileSize > 7 * 1024 * 1024) {
+        _showFileSizeAlert(
+          'Selected file is larger than 7MB. Please select a smaller file.',
+        );
+        return;
+      }
       setState(() {
         if (imageFileList.isEmpty || imagesPath.isEmpty) {
           imagesPath = [tempImage];
@@ -367,33 +417,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
         }
       });
     } catch (_) {}
-  }
-
-  void _onLocationChanged() {
-    getSuggestion(_locationController.text);
-  }
-
-  void getSuggestion(String input) async {
-    final kPLACES_API_KEY =
-        dotenv.env['kPLACES_API_KEY'] ?? 'No secret key found';
-    if (input.isEmpty) {
-      setState(() => _placeList = []);
-      return;
-    }
-    try {
-      final baseURL =
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json';
-      final request =
-          '$baseURL?input=$input&key=$kPLACES_API_KEY&sessiontoken=$_sessionToken';
-      final response = await http.get(Uri.parse(request));
-      if (response.statusCode == 200 && mounted) {
-        setState(() {
-          _placeList = json.decode(response.body)['predictions'] ?? [];
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _placeList = []);
-    }
   }
 
   bool _savingDraft = false;
@@ -430,7 +453,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
     await prefs.setString('listing_draft_pasd', pasd);
     await prefs.setString('listing_draft_paed', paed);
     await prefs.setInt('listing_draft_group', _groupValue);
-    await prefs.setBool('listing_draft_instant', insRentSwitchNot);
     await prefs.setString('listing_draft_location', _locationController.text);
     await prefs.setString('listing_draft_lat', locationLat ?? '');
     await prefs.setString('listing_draft_lng', locationLng ?? '');
@@ -450,11 +472,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
         Get.back();
         if (showToast) {
           Future.microtask(() {
-            Get.snackbar(
+            showAppSnackbar(
               'Draft saved',
               'Your listing progress was saved on this device.',
-              snackPosition: SnackPosition.BOTTOM,
-              duration: const Duration(seconds: 2),
             );
           });
         }
@@ -462,11 +482,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       if (showToast && mounted) {
-        Get.snackbar(
+        showAppSnackbar(
           'Draft saved',
           'Your listing progress was saved on this device.',
-          snackPosition: SnackPosition.BOTTOM,
-          duration: const Duration(seconds: 2),
         );
       }
     } finally {
@@ -491,7 +509,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
     await prefs.remove('listing_draft_pasd');
     await prefs.remove('listing_draft_paed');
     await prefs.remove('listing_draft_group');
-    await prefs.remove('listing_draft_instant');
     await prefs.remove('listing_draft_location');
     await prefs.remove('listing_draft_lat');
     await prefs.remove('listing_draft_lng');
@@ -522,14 +539,19 @@ class _AddProductScreenState extends State<AddProductScreen> {
     pasd = prefs.getString('listing_draft_pasd') ?? pasd;
     paed = prefs.getString('listing_draft_paed') ?? paed;
     _groupValue = prefs.getInt('listing_draft_group') ?? 0;
-    freePU = _groupValue == 0 ? "1" : "0";
-    locationBD = _groupValue == 1 ? "1" : "0";
-    insRentSwitchNot = prefs.getBool('listing_draft_instant') ?? true;
+    isDelivery = _groupValue == 1 ? "1" : "0";
     _locationController.text = prefs.getString('listing_draft_location') ?? '';
     final lat = prefs.getString('listing_draft_lat');
     final lng = prefs.getString('listing_draft_lng');
     locationLat = lat != null && lat.isNotEmpty ? lat : null;
     locationLng = lng != null && lng.isNotEmpty ? lng : null;
+    if (_locationController.text.isNotEmpty) {
+      _resolvedLocation = ParsedUsAddress(
+        formattedAddress: _locationController.text,
+        latitude: double.tryParse(locationLat ?? ''),
+        longitude: double.tryParse(locationLng ?? ''),
+      );
+    }
     materialValue = prefs.getString('listing_draft_material') ?? materialValue;
     conditionValue = prefs.getString('listing_draft_condition') ?? conditionValue;
     finishValue = prefs.getString('listing_draft_finish') ?? finishValue;
@@ -664,12 +686,35 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   // --- Validation & navigation ---
 
-  void _showError(String message) {
-    Get.snackbar(
-      'Required',
-      message,
-      snackPosition: SnackPosition.BOTTOM,
-      duration: const Duration(seconds: 2),
+  void _showError(String message) =>
+      showAppErrorSnackbar(message, title: 'Required');
+
+  void _showFileSizeAlert(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(
+            'File Size Exceeded',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+          content: Text(
+            message,
+            style: GoogleFonts.inter(fontWeight: FontWeight.w400),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text(
+                'OK',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              ),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -685,9 +730,25 @@ class _AddProductScreenState extends State<AddProductScreen> {
     return true;
   }
 
+  bool _isValidIntPrice(String value, {required bool required}) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return !required;
+    final parsed = int.tryParse(trimmed);
+    return parsed != null && parsed >= 0;
+  }
+
   bool _validateStep2() {
-    if (rentPriceController.text.trim().isEmpty) {
-      _showError('Please enter a rent price');
+    if (!_isValidIntPrice(rentPriceController.text, required: true)) {
+      _showError('Please enter a valid rent price');
+      return false;
+    }
+    if (!_isValidIntPrice(SecurityDepositeController.text, required: true)) {
+      _showError('Please enter a valid security deposit');
+      return false;
+    }
+    if (deliveryChargesController.text.trim().isNotEmpty &&
+        !_isValidIntPrice(deliveryChargesController.text, required: false)) {
+      _showError('Please enter a valid delivery fee');
       return false;
     }
     return true;
@@ -706,11 +767,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _showError('End date must be on or after start date');
       return false;
     }
-    if (locationBD == "1" &&
-        (_locationController.text.trim().isEmpty ||
-            locationLat == null ||
-            locationLng == null)) {
-      _showError('Please enter and select a delivery location');
+    if (_locationController.text.trim().isEmpty ||
+        _resolvedLocation?.hasResolvedMapLocation != true) {
+      _showError(ParsedUsAddress.selectFromSuggestionsMessage);
       return false;
     }
     return true;
@@ -793,7 +852,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
       }
 
       final data = {
-        "file": image_document,
         "user_id": id.toString(),
         "category_id": selected_id.toString(),
         "subcategory_id": selected_sub_id.toString(),
@@ -804,84 +862,44 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 ? "0"
                 : deliveryChargesController.text.toString(),
         "specifications": specsController.text.toString(),
-        "service_agreements": descriptionController.text.toString(),
-        "negotiation":
-            negotiationController.text.toString().isEmpty
-                ? "0"
-                : negotiationController.text.toString(),
-        "array": [],
-        "isMessage": "1",
+        "description": descriptionController.text.toString(),
+        "is_delivery": isDelivery == "1" ? 1 : 0,
+        "available_from": pasd,
+        "available_to": paed,
+        "address": _locationController.text.trim(),
+        "latitude": locationLat ?? "",
+        "longitude": locationLng ?? "",
+        "security_deposit": SecurityDepositeController.text.toString(),
+        "file": image_document,
       };
 
       final formData = d.FormData.fromMap(data);
-      final response = await Dio().post("${Url}/productInsert", data: formData);
+      final response = await Dio().post(
+        "${Url}/productInsert",
+        data: formData,
+        options: d.Options(
+          contentType: 'multipart/form-data',
+          headers: await ApiHeaders.authOnly(),
+        ),
+      );
 
       if (response.toString() == 'Your files uploaded.') {
-        ApiRepository.shared.getLastProductByVendorId(
-          (list) {
-            final productID =
-                ApiRepository.shared.lastVendorProductList?.data?.id;
-            final categoryID =
-                ApiRepository.shared.lastVendorProductList?.data?.subcategoryId;
-            if (productID == null || categoryID == null) {
-              if (mounted) {
-                setState(() => addBtn = false);
-                _showError('Could not get product info');
-              }
-              return;
-            }
-            ApiRepository.shared.postProductInfo(
-              productID.toString(),
-              id.toString(),
-              "0",
-              categoryID.toString(),
-              freePU == "1" ? 1 : 0,
-              locationBD == "1" ? 1 : 0,
-              pasd,
-              paed,
-              pasd,
-              paed,
-              "0",
-              "0",
-              locationLat ?? "0",
-              locationLng ?? "0",
-              SecurityDepositeController.text.toString(),
-              (list) async {
-                await _clearDraft();
-                AnalyticsService.instance.track('listing_published');
-                if (mounted) {
-                  setState(() => addBtn = false);
-                  Get.off(() => const ListingSuccessScreen());
-                }
-              },
-              (error) {
-                if (mounted) {
-                  setState(() => addBtn = false);
-                  _showError(
-                    'Product saved. Failed to save availability info.',
-                  );
-                }
-              },
-            );
-          },
-          (error) {
-            if (mounted) {
-              setState(() => addBtn = false);
-              _showError('Product created but could not load details');
-            }
-          },
-          id,
-        );
+        await _clearDraft();
+        AnalyticsService.instance.track('listing_published');
+        if (mounted) {
+          setState(() => addBtn = false);
+          Get.off(() => const ListingSuccessScreen());
+        }
       } else {
         if (mounted) {
           setState(() => addBtn = false);
-          _showError(response.toString());
+          showAppErrorSnackbar(response.toString());
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => addBtn = false);
-        _showError('Failed to publish listing');
+        showAppErrorSnackbar('Failed to publish listing');
       }
     }
   }
@@ -896,7 +914,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
     rentPriceController.dispose();
     SecurityDepositeController.dispose();
     deliveryChargesController.dispose();
-    negotiationController.dispose();
     super.dispose();
   }
 
@@ -1280,7 +1297,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           const SizedBox(height: 8),
           _textField(
             controller: rentPriceController,
-            hint: '0.00',
+            hint: '0',
             keyboardType: TextInputType.number,
             prefixIcon: Icons.attach_money,
           ),
@@ -1294,7 +1311,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           const SizedBox(height: 8),
           _textField(
             controller: SecurityDepositeController,
-            hint: '0.00',
+            hint: '0',
             keyboardType: TextInputType.number,
             prefixIcon: Icons.lock_outline,
           ),
@@ -1308,50 +1325,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
           const SizedBox(height: 8),
           _textField(
             controller: deliveryChargesController,
-            hint: '0.00',
+            hint: '0',
             keyboardType: TextInputType.number,
             prefixIcon: Icons.local_shipping_outlined,
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Allow Instant Booking',
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Renters can book without approval.',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: Colors.black45,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                CupertinoSwitch(
-                  value: insRentSwitchNot,
-                  activeTrackColor: _primaryGold,
-                  onChanged: (v) => setState(() => insRentSwitchNot = v),
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -1423,55 +1399,26 @@ class _AddProductScreenState extends State<AddProductScreen> {
               ],
             ),
           ),
-          if (_groupValue == 1) ...[
-            const SizedBox(height: 16),
-            _fieldLabel('Location'),
-            const SizedBox(height: 8),
-            _textField(
-              controller: _locationController,
-              hint: 'Enter address',
-              onChanged: (_) => _onLocationChanged(),
+          const SizedBox(height: 16),
+          _fieldLabel('Listing location'),
+          const SizedBox(height: 4),
+          Text(
+            'Where renters can pick up this item, or where you deliver from.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: Colors.grey.shade600,
+              height: 1.35,
             ),
-            if (_placeList.isNotEmpty)
-              Container(
-                margin: const EdgeInsets.only(top: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _placeList.length.clamp(0, 4),
-                  itemBuilder: (context, index) {
-                    final prediction = _placeList[index];
-                    final name = prediction['description'] ?? '';
-                    return ListTile(
-                      dense: true,
-                      title: Text(name, style: GoogleFonts.inter(fontSize: 13)),
-                      onTap: () async {
-                        _locationController.text = name;
-                        try {
-                          final locations = await locationFromAddress(name);
-                          if (locations.isNotEmpty && mounted) {
-                            setState(() {
-                              locationLat =
-                                  locations.last.latitude.toString();
-                              locationLng =
-                                  locations.last.longitude.toString();
-                              _placeList = [];
-                            });
-                          }
-                        } catch (_) {
-                          if (mounted) setState(() => _placeList = []);
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
-          ],
+          ),
+          const SizedBox(height: 8),
+          AddressAutocompleteField(
+            controller: _locationController,
+            resolvedAddress: _resolvedLocation,
+            onEditingStarted: _clearResolvedLocation,
+            onAddressSelected: _applySelectedLocation,
+            hint: 'Enter address',
+            decoration: _listingLocationDecoration,
+          ),
           const SizedBox(height: 16),
           _buildAvailabilityCalendar(),
         ],
@@ -1621,10 +1568,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
               'Delivery Fee',
               '\$${deliveryChargesController.text.isEmpty ? '0' : deliveryChargesController.text}',
             ),
-            _reviewRow(
-              'Instant Booking',
-              insRentSwitchNot ? 'Yes' : 'No',
-            ),
           ]),
           const SizedBox(height: 12),
           _reviewSection('Availability', [
@@ -1641,6 +1584,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
           const SizedBox(height: 12),
           _reviewSection('Delivery', [
             _reviewRow('Type', deliveryLabel),
+            if (_locationController.text.trim().isNotEmpty)
+              _reviewRow('Listing location', _locationController.text.trim()),
           ]),
           const SizedBox(height: 28),
           SizedBox(
@@ -1709,8 +1654,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         onTap: () {
           setState(() {
             _groupValue = value;
-            freePU = value == 0 ? "1" : "0";
-            locationBD = value == 1 ? "1" : "0";
+            isDelivery = value == 1 ? "1" : "0";
           });
         },
         child: Container(
@@ -1762,6 +1706,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
       maxLines: maxLines,
       maxLength: maxLength,
       keyboardType: keyboardType,
+      inputFormatters:
+          isNumericField ? [FilteringTextInputFormatter.digitsOnly] : null,
       textCapitalization:
           isNumericField ? TextCapitalization.none : textCapitalization,
       autocorrect: !isNumericField,

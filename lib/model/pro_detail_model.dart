@@ -1,14 +1,7 @@
-// To parse this JSON data, do
-//
-//     final productDetailmodel = productDetailmodelFromJson(jsonString);
-
 import 'dart:convert';
 
 ProductDetailmodel productDetailmodelFromJson(String str) =>
     ProductDetailmodel.fromJson(json.decode(str));
-
-String productDetailmodelToJson(ProductDetailmodel data) =>
-    json.encode(data.toJson());
 
 class ProductDetailmodel {
   ProductDetailmodel({
@@ -44,10 +37,9 @@ class Datum {
     required this.name,
     required this.price,
     required this.specifications,
-    required this.serviceAgreements,
+    required this.description,
     required this.createdAt,
     required this.updatedAt,
-    required this.negotiation,
     required this.stars,
     required this.length,
     required this.images,
@@ -60,10 +52,9 @@ class Datum {
   String name;
   int price;
   String specifications;
-  String serviceAgreements;
+  String description;
   String createdAt;
   String updatedAt;
-  int negotiation;
   String stars;
   String length;
   List<Image> images;
@@ -76,10 +67,9 @@ class Datum {
     name: json["name"],
     price: json["price"],
     specifications: json["specifications"],
-    serviceAgreements: json["service_agreements"],
+    description: json["description"],
     createdAt: json["created_at"],
     updatedAt: json["updated_at"],
-    negotiation: json["negotiation"],
     stars: json["stars"],
     length: json["length"],
     images:
@@ -96,10 +86,9 @@ class Datum {
     "name": name,
     "price": price,
     "specifications": specifications,
-    "service_agreements": serviceAgreements,
+    "description": description,
     "created_at": createdAt,
     "updated_at": updatedAt,
-    "negotiation": negotiation,
     "stars": stars,
     "length": length,
     "images": List<dynamic>.from(images.map((x) => x.toJson())),

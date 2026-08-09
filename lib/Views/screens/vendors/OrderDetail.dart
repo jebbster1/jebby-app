@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
 import 'package:intl/intl.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/res/color.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/Views/screens/vendors/MyOrders.dart';
 
 import '../../../model/postOrderStatusUpdateModel.dart';
@@ -24,7 +26,6 @@ class OrderDetailScreen extends StatefulWidget {
   final dynamic route;
   final dynamic email;
   final dynamic location;
-  final dynamic nego_price;
 
   const OrderDetailScreen({
     super.key,
@@ -39,7 +40,6 @@ class OrderDetailScreen extends StatefulWidget {
     this.route,
     this.email,
     this.location,
-    this.nego_price,
   });
 
   @override
@@ -134,11 +134,7 @@ class _OrderDetailStateScreen extends State<OrderDetailScreen> {
       widget.vendorId,
       widget.route.toString(),
     );
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Updating status…', style: GoogleFonts.inter()),
-      ),
-    );
+    showAppSnackbar('Status', 'Updating status…');
   }
 
   Future<PostOrderStatusUpdateModel> orderStatusUpdate(
@@ -157,7 +153,7 @@ class _OrderDetailStateScreen extends State<OrderDetailScreen> {
     final response = await http.post(
       Uri.parse(AppUrl.orderStatusById),
       body: request,
-      headers: {'Content-type': 'application/json'},
+      headers: await ApiHeaders.json(),
     );
     if (response.statusCode == 200) {
       try {
@@ -192,16 +188,8 @@ class _OrderDetailStateScreen extends State<OrderDetailScreen> {
   }
 
   String _priceLine() {
-    final nego =
-        int.tryParse(widget.nego_price?.toString() ?? '0') ?? 0;
-    if (nego != 0) return '\$$nego';
     final p = widget.price?.toString() ?? '0';
     return '\$$p';
-  }
-
-  bool get _hasNegotiatedPrice {
-    final n = int.tryParse(widget.nego_price?.toString() ?? '0') ?? 0;
-    return n != 0;
   }
 
   String _productHeading() {
@@ -448,30 +436,8 @@ class _OrderDetailStateScreen extends State<OrderDetailScreen> {
                     color: Colors.black,
                   ),
                 ),
-                if (_hasNegotiatedPrice) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    'Negotiated',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFFE65100),
-                    ),
-                  ),
-                ],
               ],
             ),
-            if (_hasNegotiatedPrice) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Listed at \$${widget.price}',
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: _metaGrey,
-                  decoration: TextDecoration.lineThrough,
-                ),
-              ),
-            ],
             const SizedBox(height: 16),
             Row(
               children: [

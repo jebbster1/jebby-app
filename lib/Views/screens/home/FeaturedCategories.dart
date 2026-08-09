@@ -109,7 +109,7 @@ class _FeaturedCategoriesScreenState extends State<FeaturedCategoriesScreen> {
                                 Get.to(() => NotificationsScreen());
                               },
                               image: const AssetImage(
-                                'assets/slicing/notificationnew.png',
+                                'assets/images/notificationnew.png',
                               ),
                             ),
                           ),
@@ -121,7 +121,7 @@ class _FeaturedCategoriesScreenState extends State<FeaturedCategoriesScreen> {
                                 Get.to(() => MyProfileScreen());
                               },
                               image: const AssetImage(
-                                'assets/slicing/personnew.png',
+                                'assets/images/personnew.png',
                               ),
                             ),
                           ),

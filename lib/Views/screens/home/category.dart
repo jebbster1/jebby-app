@@ -68,19 +68,6 @@ class _ElectronicsScreenState extends State<ElectronicsScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      // backgroundColor: Colors.transparent,
-      // appBar: AppBar(
-      //   backgroundColor: Colors.transparent,
-      //   automaticallyImplyLeading: false,
-      //   elevation: 0,
-      //   leading: InkWell(
-      //     onTap: () {
-      //       Get.back();
-      //     },
-      //     borderRadius: BorderRadius.circular(50),
-      //     child: Icon(Icons.arrow_back, color: Colors.black),
-      //   ),
-      // ),
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(350),
         child: Builder(
@@ -94,10 +81,6 @@ class _ElectronicsScreenState extends State<ElectronicsScreen> {
                   fit: StackFit.expand,
                   children: [
                     // Background image
-                    // Image(
-                    //   image: imageProvider,
-                    //   fit: BoxFit.cover,
-                    // ),
                     CachedNetworkImage(
                       imageUrl: widget.pictureurl!,
                       fit: BoxFit.cover,
@@ -166,35 +149,6 @@ class _ElectronicsScreenState extends State<ElectronicsScreen> {
                     ),
                   ],
                 ),
-                // child: Stack(
-                //   children: [
-                //     Container(
-                //       height: 400,
-                //       decoration: BoxDecoration(
-                //         image: DecorationImage(
-                //           image: NetworkImage(widget.pictureurl!),
-                //         ),
-                //         borderRadius: BorderRadius.only(
-                //           bottomLeft: Radius.circular(radius),
-                //           bottomRight: Radius.circular(radius),
-                //         ),
-                //       ),
-                //       padding: EdgeInsets.fromLTRB(16, top + 12, 16, 18),
-                //     ),
-                //
-                //     Positioned(
-                //       top: 10,
-                //       left: 10,
-                //       child: InkWell(
-                //         onTap: () {
-                //           Get.back();
-                //         },
-                //         borderRadius: BorderRadius.circular(50),
-                //         child: Icon(Icons.arrow_back, color: Colors.black),
-                //       ),
-                //     ),
-                //   ],
-                // ),
               ),
             );
           },
@@ -247,7 +201,6 @@ class _ElectronicsScreenState extends State<ElectronicsScreen> {
                             width: res_width,
                             child: GridView.builder(
                               padding: const EdgeInsets.all(6),
-                              //                        physics: const BouncingScrollPhysics(),
                               shrinkWrap: true,
                               physics: NeverScrollableScrollPhysics(),
 
@@ -256,7 +209,6 @@ class _ElectronicsScreenState extends State<ElectronicsScreen> {
                                 crossAxisCount: 2,
                                 crossAxisSpacing: 14,
                                 mainAxisSpacing: 14,
-                                // Wider than tall to match your screenshot card shape
                                 childAspectRatio: 1.2,
                               ),
                               itemBuilder: (context, index) {
@@ -332,10 +284,6 @@ class _ElectronicsScreenState extends State<ElectronicsScreen> {
             fit: StackFit.expand,
             children: [
               // Background image
-              // Image(
-              //   image: imageProvider,
-              //   fit: BoxFit.cover,
-              // ),
               CachedNetworkImage(
                 imageUrl: '$img',
                 fit: BoxFit.cover,

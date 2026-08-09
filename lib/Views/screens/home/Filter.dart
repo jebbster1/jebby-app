@@ -1,6 +1,7 @@
-import 'dart:convert';
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:jebby/Views/screens/home/filteredData.dart';
 import 'package:jebby/view_model/apiServices.dart';
@@ -11,8 +12,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:jebby/Views/helper/colors.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
+import 'package:jebby/Views/widgets/address_autocomplete_field.dart';
+import 'package:jebby/utils/google_places_address.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/res/app_url.dart';
 
 import '../../../res/color.dart';
@@ -33,13 +36,13 @@ class _FilterScreeenState extends State<FilterScreeen> {
   bool _isSelectingEnd = false;
   bool notSearch = true;
   double _Pvalue = 50;
-  double _distanceValue = 10.0; // Distance filter in km
+  double _distanceValue = 10.0;
   var radius = 0;
-  var price = 0;
+  bool _ignoreLocationClear = false;
+  var price = 50;
   late String url;
   var _locationController = TextEditingController();
-  List<dynamic> _placeList = [];
-  String _sessionToken = '1234567890';
+  ParsedUsAddress? _resolvedAddress;
   var uuid = new Uuid();
   var Latitiude;
   var Longitude;
@@ -67,7 +70,6 @@ class _FilterScreeenState extends State<FilterScreeen> {
   bool filteredData = false;
   bool filteredError = false;
   bool emptyFilteredData = false;
-  late var snackBar;
   bool radiusVisibility = false;
 
   // Map related variables
@@ -78,6 +80,7 @@ class _FilterScreeenState extends State<FilterScreeen> {
   bool _isLocationLoading = true;
   bool _showMap = false;
   List<dynamic> _nearbyProducts = [];
+  final Map<String, BitmapDescriptor> _markerIconCache = {};
 
   // Default center on US if location not available
   CameraPosition _initialCameraPosition = CameraPosition(
@@ -91,30 +94,158 @@ class _FilterScreeenState extends State<FilterScreeen> {
     super.dispose();
   }
 
-  _onChanged() {
-    getSuggestion(_locationController.text);
+  void _setLocationText(String text) {
+    _ignoreLocationClear = true;
+    _locationController.text = text;
+    _ignoreLocationClear = false;
   }
 
-  void getSuggestion(String input) async {
-    String kPLACES_API_KEY =
-        dotenv.env['kPLACES_API_KEY'] ?? 'No secret key found';
+  void _clearResolvedAddress() {
+    if (_ignoreLocationClear) return;
+    setState(() {
+      _resolvedAddress = const ParsedUsAddress();
+      Latitiude = null;
+      Longitude = null;
+    });
+  }
 
-    try {
-      String baseURL =
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json';
-      String request =
-          '$baseURL?input=$input&key=$kPLACES_API_KEY&sessiontoken=$_sessionToken';
-      var response = await http.get(Uri.parse(request));
-      if (response.statusCode == 200) {
-        setState(() {
-          _placeList = json.decode(response.body)['predictions'];
-        });
-      } else {
-        throw Exception('Failed to load predictions');
-      }
-    } catch (e) {
-      // Handle error silently
+  bool get _hasSearchLocation =>
+      _searchLatitude != null && _searchLongitude != null;
+
+  double? get _searchLatitude =>
+      _toDouble(Latitiude) ?? _resolvedAddress?.latitude;
+
+  double? get _searchLongitude =>
+      _toDouble(Longitude) ?? _resolvedAddress?.longitude;
+
+  double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
+  int get _effectiveSearchRadius {
+    if (!_hasSearchLocation) return 0;
+    return radius > 0 ? radius : _distanceValue.round();
+  }
+
+  double? get _mapCenterLatitude =>
+      _searchLatitude ?? _currentPosition?.latitude;
+
+  double? get _mapCenterLongitude =>
+      _searchLongitude ?? _currentPosition?.longitude;
+
+  bool get _hasMapCenter =>
+      _mapCenterLatitude != null && _mapCenterLongitude != null;
+
+  double get _mapRadiusMiles =>
+      radius > 0 ? radius.toDouble() : _distanceValue;
+
+  Future<void> _moveMapToCenter() async {
+    final lat = _mapCenterLatitude;
+    final lng = _mapCenterLongitude;
+    if (lat == null || lng == null) return;
+
+    setState(() {
+      _initialCameraPosition = CameraPosition(
+        target: LatLng(lat, lng),
+        zoom: 11,
+      );
+    });
+
+    if (_mapController != null) {
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngZoom(LatLng(lat, lng), 11),
+      );
     }
+  }
+
+  String _urlParam(dynamic value) {
+    if (value == null) return 'null';
+    final text = value.toString().trim();
+    if (text.isEmpty || text.toLowerCase() == 'null') return 'null';
+    return text;
+  }
+
+  String _priceUrlParam() {
+    final maxPrice = _Pvalue.round();
+    if (maxPrice <= 0 || maxPrice >= 1000) return 'null';
+    return maxPrice.toString();
+  }
+
+  String _buildSearchUrl(String baseUrl, {required bool useLocationSearch}) {
+    final startDateParam =
+        fromDate != null ? _urlParam(fromDate) : 'null';
+    final endDateParam = fromDate != null
+        ? _urlParam(toDate ?? selectedDate1)
+        : 'null';
+    final latParam =
+        useLocationSearch ? _urlParam(_searchLatitude) : 'null';
+    final lngParam =
+        useLocationSearch ? _urlParam(_searchLongitude) : 'null';
+    final milesParam = useLocationSearch
+        ? _urlParam(_effectiveSearchRadius)
+        : 'null';
+    final subCategoryParam = _urlParam(selected_sub_id);
+    final priceParam = _priceUrlParam();
+
+    return '$baseUrl/getProductSearching/$startDateParam/$endDateParam/$latParam/$lngParam/$milesParam/$subCategoryParam/$priceParam';
+  }
+
+  Future<bool> _ensureSearchCoordinates() async {
+    if (_hasSearchLocation) {
+      final lat = _searchLatitude!;
+      final lng = _searchLongitude!;
+      if (_toDouble(Latitiude) == null || _toDouble(Longitude) == null) {
+        setState(() {
+          Latitiude = lat;
+          Longitude = lng;
+        });
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  Future<void> _applySelectedAddress(ParsedUsAddress address) async {
+    ParsedUsAddress resolved = address;
+    if (!address.hasCoordinates) {
+      for (final query in [
+        address.formattedAddress.trim(),
+        address.displayLine.trim(),
+        address.displaySummary.trim(),
+      ].where((value) => value.isNotEmpty)) {
+        try {
+          final locations = await locationFromAddress(query);
+          if (locations.isEmpty) continue;
+          resolved = address.copyWith(
+            latitude: locations.first.latitude,
+            longitude: locations.first.longitude,
+          );
+          break;
+        } catch (_) {}
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _resolvedAddress = resolved;
+      if (resolved.hasCoordinates) {
+        Latitiude = resolved.latitude;
+        Longitude = resolved.longitude;
+        _initialCameraPosition = CameraPosition(
+          target: LatLng(resolved.latitude!, resolved.longitude!),
+          zoom: 12.0,
+        );
+        if (radius == 0) {
+          radius = _distanceValue.round();
+        }
+      }
+    });
+    await _moveMapToCenter();
+    _loadNearbyProducts();
   }
 
   Future<void> _getCurrentLocation() async {
@@ -163,6 +294,9 @@ class _FilterScreeenState extends State<FilterScreeen> {
         _currentPosition = position;
         Latitiude = position.latitude;
         Longitude = position.longitude;
+        if (radius == 0) {
+          radius = _distanceValue.round();
+        }
         _initialCameraPosition = CameraPosition(
           target: LatLng(position.latitude, position.longitude),
           zoom: 12.0,
@@ -195,360 +329,206 @@ class _FilterScreeenState extends State<FilterScreeen> {
         setState(() {
           _currentAddress =
               '${place.street}, ${place.locality}, ${place.administrativeArea} ${place.postalCode}';
-          _locationController.text = _currentAddress;
+          _setLocationText(_currentAddress);
+          _resolvedAddress = ParsedUsAddress(
+            formattedAddress: _currentAddress,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            line1: place.street ?? '',
+            city: place.locality ?? '',
+            state: place.administrativeArea ?? '',
+            postalCode: place.postalCode ?? '',
+          );
         });
       }
     } catch (e) {}
   }
 
   void _loadNearbyProducts() {
-    if (_currentPosition == null) return;
+    if (!_hasMapCenter) return;
 
-    // Fetch real products from API
-    print('DEBUG: Starting to fetch all products from API...');
     ApiRepository.shared.allProducts(
       (List) {
-        if (this.mounted) {
-          print(
-            'DEBUG: All products API response - ${List.data?.length ?? 0} products',
-          );
-          if (List.data != null && List.data!.length > 0) {
-            setState(() {
-              _nearbyProducts =
-                  List.data!.map((product) {
-                    return {
-                      'id': product.id.toString(),
-                      'name': product.name ?? 'Unknown Product',
-                      'price': product.price?.toString() ?? '0',
-                      'image': product.image ?? '',
-                      'stars': product.stars ?? '0',
-                      'length': product.length ?? '0',
-                    };
-                  }).toList();
-            });
-            print('DEBUG: Processed ${_nearbyProducts.length} real products');
-            print(
-              'DEBUG: First product: ${_nearbyProducts.isNotEmpty ? _nearbyProducts.first : 'No products'}',
-            );
+        if (!mounted) return;
 
-            // Now fetch location data for these products
-            _fetchProductLocations();
-          } else {
-            print('DEBUG: No products found in API response');
-            setState(() {
-              _nearbyProducts = [];
-            });
-            _addProductMarkers();
-          }
-        }
-      },
-      (error) {
-        print('DEBUG: Error fetching products: $error');
-        if (this.mounted) {
+        if (List.data == null || List.data!.isEmpty) {
           setState(() {
             _nearbyProducts = [];
           });
           _addProductMarkers();
+          return;
         }
+
+        setState(() {
+          _nearbyProducts =
+              List.data!.map((product) {
+                return {
+                  'id': product.id.toString(),
+                  'name': product.name ?? 'Unknown Product',
+                  'price': product.price?.toString() ?? '0',
+                  'image': product.image ?? '',
+                  'stars': product.stars ?? '0',
+                  'length': product.length ?? '0',
+                  'latitude': product.latitude ?? '',
+                  'longitude': product.longitude ?? '',
+                };
+              }).toList();
+        });
+        _addProductMarkers();
+      },
+      (error) {
+        if (!mounted) return;
+        setState(() {
+          _nearbyProducts = [];
+        });
+        _addProductMarkers();
       },
     );
   }
 
-  void _fetchProductLocations() async {
-    if (_nearbyProducts.isEmpty) {
-      print('DEBUG: No products to fetch locations for');
-      return;
-    }
-
-    print(
-      'DEBUG: Starting to fetch locations for ${_nearbyProducts.length} products',
-    );
-
-    try {
-      // For now, let's use a simpler approach - assign locations based on product ID
-      // This ensures all products get a location even if they don't have real location data
-      for (int i = 0; i < _nearbyProducts.length; i++) {
-        var product = _nearbyProducts[i];
-        String productId = product['id'];
-
-        // Create a location offset based on product ID to spread them around
-        double latOffset = (int.parse(productId) % 10) * 0.001;
-        double lngOffset = (int.parse(productId) % 7) * 0.001;
-
-        _nearbyProducts[i]['latitude'] =
-            (_currentPosition!.latitude + latOffset).toString();
-        _nearbyProducts[i]['longitude'] =
-            (_currentPosition!.longitude + lngOffset).toString();
-
-        print(
-          'DEBUG: Assigned location for product ${productId}: ${_nearbyProducts[i]['latitude']}, ${_nearbyProducts[i]['longitude']}',
-        );
-      }
-
-      print('DEBUG: Finished assigning locations for all products');
-      if (this.mounted) {
-        setState(() {});
-
-        // Add a small delay to ensure map is ready
-        Future.delayed(Duration(milliseconds: 500), () {
-          if (this.mounted) {
-            _addProductMarkers();
-          }
-        });
-      }
-    } catch (e) {
-      print('Error assigning product locations: $e');
-      if (this.mounted) {
-        setState(() {});
-
-        // Add a small delay to ensure map is ready
-        Future.delayed(Duration(milliseconds: 500), () {
-          if (this.mounted) {
-            _addProductMarkers();
-          }
-        });
-      }
-    }
+  String _productImageUrl(dynamic imagePath) {
+    final path = imagePath?.toString().trim() ?? '';
+    if (path.isEmpty) return '';
+    if (path.startsWith('http')) return path;
+    return AppUrl.baseUrlM + path;
   }
 
   Future<BitmapDescriptor> _getProductMarker(
     String productName,
     String imagePath,
   ) async {
-    int hue = productName.hashCode % 360;
-    return BitmapDescriptor.defaultMarkerWithHue(hue.toDouble());
-  }
+    final cacheKey = imagePath.trim().isNotEmpty ? imagePath.trim() : productName;
+    final cached = _markerIconCache[cacheKey];
+    if (cached != null) return cached;
 
-  // Add this function to show a dialog with the product image and details
-  void _showProductInfoDialog(
-    BuildContext context,
-    Map<String, dynamic> product,
-  ) {
-    String imageUrl =
-        product['image'] != null && product['image'].toString().isNotEmpty
-            ? AppUrl.baseUrlM + product['image']
-            : '';
-
-    // Get location coordinates
-    String locationInfo = '';
-    if (product['latitude'] != null && product['longitude'] != null) {
-      double lat = double.tryParse(product['latitude'].toString()) ?? 0.0;
-      double lng = double.tryParse(product['longitude'].toString()) ?? 0.0;
-      if (lat != 0.0 && lng != 0.0) {
-        locationInfo =
-            'Location: ${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
-      }
+    final imageUrl = _productImageUrl(imagePath);
+    if (imageUrl.isEmpty) {
+      final fallback = BitmapDescriptor.defaultMarkerWithHue(
+        (productName.hashCode % 360).toDouble(),
+      );
+      _markerIconCache[cacheKey] = fallback;
+      return fallback;
     }
 
-    final String productName = (product['name'] ?? 'Rental item').toString();
-    final String productPrice = product['price'] != null
-        ? '\$${product['price']}'
-        : 'Price not available';
+    try {
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode != 200) {
+        throw Exception('marker image request failed');
+      }
 
-    showDialog(
-      context: context,
-      builder:
-          (context) => Dialog(
-            insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            backgroundColor: Colors.transparent,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.16),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (imageUrl.isNotEmpty)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Image.network(
-                        imageUrl,
-                        width: double.infinity,
-                        height: 170,
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  else
-                    Container(
-                      width: double.infinity,
-                      height: 170,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(
-                        Icons.image_outlined,
-                        size: 38,
-                        color: Colors.grey.shade500,
-                      ),
-                    ),
-                  const SizedBox(height: 14),
-                  Text(
-                    productName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1B1B1F),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    productPrice,
-                    style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1B1B1F),
-                    ),
-                  ),
-                  if (locationInfo.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.only(top: 2),
-                          child: Icon(
-                            Icons.place_outlined,
-                            size: 16,
-                            color: Color(0xFF72747A),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            locationInfo,
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFF72747A),
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black87,
-                            side: BorderSide(color: Colors.grey.shade300),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: Text(
-                            'Close',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-    );
+      final codec = await ui.instantiateImageCodec(
+        response.bodyBytes,
+        targetWidth: 120,
+        targetHeight: 120,
+      );
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+
+      const double size = 96;
+      const double border = 3;
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final center = Offset(size / 2, size / 2);
+
+      final shadowPaint = Paint()
+        ..color = Colors.black.withValues(alpha: 0.22)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      canvas.drawCircle(center.translate(0, 2), size / 2 - 2, shadowPaint);
+
+      canvas.drawCircle(
+        center,
+        size / 2 - 2,
+        Paint()..color = Colors.white,
+      );
+
+      final clipPath = Path()
+        ..addOval(Rect.fromCircle(
+          center: center,
+          radius: size / 2 - border - 2,
+        ));
+      canvas.save();
+      canvas.clipPath(clipPath);
+      paintImage(
+        canvas: canvas,
+        rect: Rect.fromCircle(
+          center: center,
+          radius: size / 2 - border - 2,
+        ),
+        image: image,
+        fit: BoxFit.cover,
+      );
+      canvas.restore();
+
+      canvas.drawCircle(
+        center,
+        size / 2 - border - 2,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = AppColors.primaryColor,
+      );
+
+      final picture = recorder.endRecording();
+      final markerImage = await picture.toImage(size.toInt(), size.toInt());
+      final byteData =
+          await markerImage.toByteData(format: ui.ImageByteFormat.png);
+      final icon = BitmapDescriptor.fromBytes(byteData!.buffer.asUint8List());
+      _markerIconCache[cacheKey] = icon;
+      return icon;
+    } catch (_) {
+      final fallback = BitmapDescriptor.defaultMarkerWithHue(
+        (productName.hashCode % 360).toDouble(),
+      );
+      _markerIconCache[cacheKey] = fallback;
+      return fallback;
+    }
   }
 
   void _addProductMarkers() async {
-    print('DEBUG: Starting to add product markers');
-    print(
-      'DEBUG: Current position: ${_currentPosition?.latitude}, ${_currentPosition?.longitude}',
-    );
-    print('DEBUG: Distance filter: $_distanceValue km');
-    print('DEBUG: Number of products: ${_nearbyProducts.length}');
+    if (!_hasMapCenter) return;
+
+    final centerLat = _mapCenterLatitude!;
+    final centerLng = _mapCenterLongitude!;
+    final maxDistanceMiles = _mapRadiusMiles;
+    final searchLabel =
+        _resolvedAddress?.displayLine.trim().isNotEmpty == true
+            ? _resolvedAddress!.displayLine
+            : 'Search area';
 
     Set<Marker> newMarkers = {};
 
-    // Add current location marker
-    if (_currentPosition != null) {
-      newMarkers.add(
-        Marker(
-          markerId: MarkerId('currentLocation'),
-          position: LatLng(
-            _currentPosition!.latitude,
-            _currentPosition!.longitude,
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: InfoWindow(
-            title: 'Your Location',
-            snippet:
-                _currentAddress.isEmpty ? 'Current Location' : _currentAddress,
-          ),
+    newMarkers.add(
+      Marker(
+        markerId: const MarkerId('searchCenter'),
+        position: LatLng(centerLat, centerLng),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        infoWindow: InfoWindow(
+          title: 'Search location',
+          snippet: searchLabel,
         ),
-      );
-      print('DEBUG: Added current location marker');
-    }
+      ),
+    );
 
-    int markersAdded = 0;
-    // Add product markers
     for (var product in _nearbyProducts) {
-      print('DEBUG: Processing product: ${product['id']} - ${product['name']}');
-      print(
-        'DEBUG: Product location: ${product['latitude']}, ${product['longitude']}',
-      );
-
       if (product['latitude'] == null || product['longitude'] == null) {
-        print('DEBUG: Skipping product ${product['id']} - no location data');
         continue;
       }
 
-      double lat = double.tryParse(product['latitude'].toString()) ?? 0.0;
-      double lng = double.tryParse(product['longitude'].toString()) ?? 0.0;
+      final lat = double.tryParse(product['latitude'].toString());
+      final lng = double.tryParse(product['longitude'].toString());
 
-      if (lat == 0.0 && lng == 0.0) {
-        print('DEBUG: Skipping product ${product['id']} - invalid coordinates');
+      if (lat == null || lng == null || (lat == 0.0 && lng == 0.0)) {
         continue;
       }
 
-      // Check distance filter
-      if (_currentPosition != null) {
-        double distanceInKm =
-            Geolocator.distanceBetween(
-              _currentPosition!.latitude,
-              _currentPosition!.longitude,
-              lat,
-              lng,
-            ) /
-            1000;
+      final distanceMiles =
+          Geolocator.distanceBetween(centerLat, centerLng, lat, lng) /
+          1609.344;
 
-        print(
-          'DEBUG: Product ${product['id']} distance: ${distanceInKm.toStringAsFixed(2)} km',
-        );
-
-        if (distanceInKm > _distanceValue) {
-          print(
-            'DEBUG: Skipping product ${product['id']} - too far (${distanceInKm.toStringAsFixed(2)} km > $_distanceValue km)',
-          );
-          continue;
-        }
+      if (distanceMiles > maxDistanceMiles) {
+        continue;
       }
 
-      // Get the marker icon (async)
-      print(
-        'DEBUG: Creating marker for product: ${product['name']} with image: ${product['image']}',
-      );
       BitmapDescriptor markerIcon = await _getProductMarker(
         product['name'],
         product['image'] ?? '',
@@ -560,25 +540,14 @@ class _FilterScreeenState extends State<FilterScreeen> {
           position: LatLng(lat, lng),
           infoWindow: InfoWindow(
             title: product['name'],
-            snippet: ' 24${product['price']}',
-            onTap: () {
-              _showProductInfoDialog(context, product);
-            },
+            snippet: '\$${product['price']}',
           ),
           icon: markerIcon,
-          onTap: () {
-            _showProductInfoDialog(context, product);
-          },
         ),
       );
-      markersAdded++;
-      print('DEBUG: Added marker for product ${product['id']}');
     }
 
-    print('DEBUG: Total markers added: $markersAdded');
-    print('DEBUG: Total markers on map: ${newMarkers.length}');
-
-    // Update markers and force rebuild
+    if (!mounted) return;
     setState(() {
       _markers = newMarkers;
     });
@@ -734,14 +703,11 @@ class _FilterScreeenState extends State<FilterScreeen> {
                   IconButton(
                     icon: Icon(Icons.my_location, color: darkBlue),
                     onPressed: () {
-                      if (_mapController != null && _currentPosition != null) {
+                      final lat = _mapCenterLatitude;
+                      final lng = _mapCenterLongitude;
+                      if (_mapController != null && lat != null && lng != null) {
                         _mapController!.animateCamera(
-                          CameraUpdate.newLatLng(
-                            LatLng(
-                              _currentPosition!.latitude,
-                              _currentPosition!.longitude,
-                            ),
-                          ),
+                          CameraUpdate.newLatLng(LatLng(lat, lng)),
                         );
                       }
                     },
@@ -991,8 +957,7 @@ class _FilterScreeenState extends State<FilterScreeen> {
                   filteredData = false;
                   filteredError = false;
                 }),
-                snackBar = new SnackBar(content: new Text("No data found")),
-                ScaffoldMessenger.of(context).showSnackBar(snackBar),
+                showAppSnackbar('No results', 'No data found'),
               }
             else
               {
@@ -1000,14 +965,6 @@ class _FilterScreeenState extends State<FilterScreeen> {
                   emptyFilteredData = false;
                   filteredData = false;
                   filteredError = false;
-                  filteredData = false;
-                  Latitiude = null;
-                  Longitude = null;
-                  radius = 0;
-                  price = 0;
-                  toDate = null;
-                  fromDate = null;
-                  _Pvalue = 50;
                 }),
                 Get.to(() => FilteredData(subCatname: sub_dropdownvalue)),
               },
@@ -1019,8 +976,7 @@ class _FilterScreeenState extends State<FilterScreeen> {
             setState(() {
               filteredError = true;
             }),
-            snackBar = new SnackBar(content: new Text("Error Occured")),
-            ScaffoldMessenger.of(context).showSnackBar(snackBar),
+            showAppErrorSnackbar('Error occurred'),
           },
       },
       url,
@@ -1118,7 +1074,6 @@ class _FilterScreeenState extends State<FilterScreeen> {
             padding: const EdgeInsets.only(right: 10),
             child: Row(
               children: [
-                // Text(
                 //   "Reset",
                 //   style: TextStyle(color: Colors.grey, fontSize: 18),
                 // ),
@@ -1129,9 +1084,10 @@ class _FilterScreeenState extends State<FilterScreeen> {
                       setState(() {
                         Latitiude = null;
                         Longitude = null;
+                        _resolvedAddress = const ParsedUsAddress();
                         _locationController.text = "";
                         radius = 0;
-                        price = 0;
+                        price = 50;
                         toDate = null;
                         fromDate = null;
                         _Pvalue = 50;
@@ -1146,6 +1102,7 @@ class _FilterScreeenState extends State<FilterScreeen> {
                         _showMap = false;
                         dropdownValue = null;
                         sub_dropdownvalue = null;
+                        selected_sub_id = null;
                         sub_items = [];
                         sub_items_id = [];
                         subCategoryVisibility = false;
@@ -1153,7 +1110,7 @@ class _FilterScreeenState extends State<FilterScreeen> {
                     },
                     borderRadius: BorderRadius.circular(50),
                     child: Image.asset(
-                      'assets/newpacks/refresh.png',
+                      'assets/images/refresh.png',
                       color: Colors.black,
                       width: 25,
                       height: 25,
@@ -1184,7 +1141,6 @@ class _FilterScreeenState extends State<FilterScreeen> {
 
                         // Map View (if enabled)
 
-                        // SizedBox(height: res_height * 0.02),
 
                         // Distance Filter
                         _buildDistanceFilter(res_width, res_height),
@@ -1258,78 +1214,38 @@ class _FilterScreeenState extends State<FilterScreeen> {
               ],
             ),
             SizedBox(height: 8),
-            Container(
-              height: 50,
-              child: TextField(
-                style: TextStyle(fontWeight: FontWeight.bold),
-                onChanged: (value) {
-                  setState(() {
-                    _onChanged();
-                    value == "" ? {Latitiude = null, Longitude = null} : null;
-                  });
-                },
-                controller: _locationController,
-                decoration: InputDecoration(
-                  prefixIcon: Icon(
-                    Icons.location_pin,
-                    color: AppColors.primaryColor,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10.0),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(
-                      color: AppColors.darkGreyColor,
-                      width: 1,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(
-                      color: AppColors.primaryColor,
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  hintText: "Enter location or use current location",
+            AddressAutocompleteField(
+              controller: _locationController,
+              resolvedAddress: _resolvedAddress,
+              onEditingStarted: _clearResolvedAddress,
+              onAddressSelected: _applySelectedAddress,
+              hint: 'Enter location or use current location',
+              promptForMissingFields: false,
+              decoration: InputDecoration(
+                prefixIcon: Icon(
+                  Icons.location_pin,
+                  color: AppColors.primaryColor,
                 ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: AppColors.darkGreyColor,
+                    width: 1,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(
+                    color: AppColors.primaryColor,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                hintText: 'Enter location or use current location',
               ),
             ),
-            if (_locationController.text.isNotEmpty)
-              Container(
-                height: 150,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  physics: ScrollPhysics(),
-                  itemCount: _placeList.length,
-                  itemBuilder: ((context, index) {
-                    String name = _placeList[index]["description"];
-                    if (name.toLowerCase().contains(
-                      _locationController.text.toLowerCase(),
-                    )) {
-                      return ListTile(
-                        title: Text(name),
-                        onTap: () async {
-                          setState(() {
-                            _locationController.text = name;
-                            _placeList = [];
-                          });
-                          List<Location> locations = await locationFromAddress(
-                            name,
-                          );
-                          if (locations.isNotEmpty) {
-                            setState(() {
-                              Latitiude = locations.first.latitude;
-                              Longitude = locations.first.longitude;
-                            });
-                          }
-                        },
-                      );
-                    }
-                    return Container();
-                  }),
-                ),
-              ),
             if (_showMap) SizedBox(height: 15),
             if (_showMap) _buildMapSection(res_width, res_height),
           ],
@@ -1773,6 +1689,7 @@ class _FilterScreeenState extends State<FilterScreeen> {
                           setState(() {
                             dropdownValue = value;
                             sub_dropdownvalue = null;
+                            selected_sub_id = null;
                             sub_items = [];
                             sub_items_id = [];
                             subCategoryVisibility = false;
@@ -1812,6 +1729,8 @@ class _FilterScreeenState extends State<FilterScreeen> {
                               if (value != null && sub_items.contains(value)) {
                                 selected_sub_id =
                                     sub_items_id[sub_items.indexOf(value)];
+                              } else {
+                                selected_sub_id = null;
                               }
                             });
                           },
@@ -1966,7 +1885,7 @@ class _FilterScreeenState extends State<FilterScreeen> {
   Widget _buildSearchButton(double res_width, double res_height) {
     return Center(
       child: GestureDetector(
-        onTap: () {
+        onTap: () async {
           setState(() {
             filteredData = true;
           });
@@ -1976,73 +1895,57 @@ class _FilterScreeenState extends State<FilterScreeen> {
                 selectedDate.toString(),
               ).compareTo(DateTime.parse(selectedDate1.toString())) >
               0) {
-            var snackBar = new SnackBar(
-              content: new Text("Please Select Valid End Date"),
-            );
-            ScaffoldMessenger.of(context).showSnackBar(snackBar);
+            showAppErrorSnackbar('Please select a valid end date', title: 'Required');
             setState(() {
               filteredData = false;
             });
             return;
           }
 
-          if (Latitiude == null) {
-            if (radius != 0) {
-              var snackBar = new SnackBar(
-                content: new Text("Please Select Location With Radius"),
+          final wantsDistance = radius > 0;
+          final hasResolvedAddress =
+              _resolvedAddress?.hasResolvedMapLocation == true;
+          final typedLocation = _locationController.text.trim().isNotEmpty;
+
+          if (typedLocation && !hasResolvedAddress) {
+            showAppErrorSnackbar(
+              ParsedUsAddress.selectFromSuggestionsMessage,
+              title: 'Required',
+            );
+            setState(() {
+              filteredData = false;
+            });
+            return;
+          }
+
+          if (wantsDistance || hasResolvedAddress) {
+            final located = await _ensureSearchCoordinates();
+            if (wantsDistance && !located) {
+              showAppErrorSnackbar(
+                hasResolvedAddress
+                    ? 'Could not locate that address. Try selecting it again from the list.'
+                    : 'Select a location from the suggestions list to use the distance filter',
               );
-              ScaffoldMessenger.of(context).showSnackBar(snackBar);
               setState(() {
                 filteredData = false;
               });
-            } else {
-              if (price == 0 && fromDate == null) {
-                url =
-                    "${Url}/getProductSearching/null/null/null/null/null/${selected_sub_id}/null";
-                getData(url);
-              } else if (price != 0 && fromDate == null) {
-                url =
-                    "${Url}/getProductSearching/null/null/null/null/null/${selected_sub_id}/${price}";
-                getData(url);
-              } else if (price == 0 && fromDate != null) {
-                url =
-                    "${Url}/getProductSearching/${fromDate}/${toDate == null ? selectedDate1 : toDate}/null/null/null/${selected_sub_id}/null";
-                getData(url);
-              } else {
-                url =
-                    "${Url}/getProductSearching/${fromDate}/${toDate == null ? selectedDate1 : toDate}/null/null/null/${selected_sub_id}/${price}";
-                getData(url);
-              }
-            }
-          } else {
-            if (radius != 0) {
-              if (price == 0 && fromDate == null) {
-                url =
-                    "${Url}/getProductSearching/null/null/${Latitiude}/${Longitude}/${radius}/${selected_sub_id}/null";
-                getData(url);
-              } else if (price != 0 && fromDate == null) {
-                url =
-                    "${Url}/getProductSearching/null/null/${Latitiude}/${Longitude}/${radius}/${selected_sub_id}/${price}";
-                getData(url);
-              } else if (price == 0 && fromDate != null) {
-                url =
-                    "${Url}/getProductSearching/${fromDate}/${toDate == null ? selectedDate1 : toDate}/${Latitiude}/${Longitude}/${radius}/${selected_sub_id}/null";
-                getData(url);
-              } else {
-                url =
-                    "${Url}/getProductSearching/${fromDate}/${toDate == null ? selectedDate1 : toDate}/${Latitiude}/${Longitude}/${radius}/${selected_sub_id}/${price}";
-                getData(url);
-              }
-            } else {
-              var snackBar = new SnackBar(
-                content: new Text("Please Select Radius With Location"),
-              );
-              ScaffoldMessenger.of(context).showSnackBar(snackBar);
-              setState(() {
-                filteredData = false;
-              });
+              return;
             }
           }
+
+          final searchRadius = _effectiveSearchRadius;
+          final useLocationSearch = _hasSearchLocation && searchRadius > 0;
+
+          if (dropdownValue != null && sub_dropdownvalue == null) {
+            showAppErrorSnackbar('Please select a sub category', title: 'Required');
+            setState(() {
+              filteredData = false;
+            });
+            return;
+          }
+
+          url = _buildSearchUrl(Url, useLocationSearch: useLocationSearch);
+          getData(url);
         },
         child: Container(
           height: 58,
@@ -2103,55 +2006,4 @@ class _FilterScreeenState extends State<FilterScreeen> {
     );
   }
 
-  TxtfldforLocation(txt, _controller) {
-    double res_width = MediaQuery.of(context).size.width;
-    double res_height = MediaQuery.of(context).size.height;
-    return Container(
-      child: Center(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: res_height * 0.02),
-            Text(txt),
-            SizedBox(height: res_height * 0.005),
-            Container(
-              height: 70,
-              width: res_width * 0.9,
-              child: TextField(
-                style: TextStyle(fontWeight: FontWeight.bold),
-                onChanged: (value) {
-                  setState(() {
-                    _onChanged();
-                    value == "" ? {Latitiude = null, Longitude = null} : null;
-                  });
-                },
-                maxLines: 1,
-                controller: _locationController,
-                decoration: InputDecoration(
-                  suffixIcon: Icon(Icons.location_pin, color: darkBlue),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15.0),
-                  ),
-                  enabledBorder: const OutlineInputBorder(
-                    borderSide: const BorderSide(
-                      color: kprimaryColor,
-                      width: 1,
-                    ),
-                    borderRadius: BorderRadius.all(Radius.circular(15)),
-                  ),
-                  focusedBorder: const OutlineInputBorder(
-                    borderSide: const BorderSide(
-                      color: kprimaryColor,
-                      width: 1,
-                    ),
-                    borderRadius: BorderRadius.all(Radius.circular(15)),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

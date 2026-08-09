@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/provider/prodetail_provider.dart';
 
 import 'package:jebby/view_model/auth_view_model.dart';
+import 'package:jebby/Views/screens/auth/login.dart';
 import 'package:jebby/Views/screens/mainfolder/homemain.dart';
 import 'package:overlay_support/overlay_support.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,10 +28,14 @@ import 'Services/fcm_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await dotenv.load(fileName: ".env");
+
+  const envFile = String.fromEnvironment(
+    'ENV_FILE',
+    defaultValue: '.env.development',
+  );
+  await dotenv.load(fileName: envFile);
   Stripe.publishableKey = dotenv.env['STRIPE_PUBLISHABLE_KEY'].toString();
 
-  // Initialize FCM service
   await FCMService().initialize();
 
   runApp(
@@ -43,7 +48,6 @@ void main() async {
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     var baseTheme = ThemeData(
@@ -74,7 +78,6 @@ class MyApp extends StatelessWidget {
       child: GetMaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Jebby',
-        //   theme: ThemeData(primarySwatch: Colors.blue),
         theme: baseTheme.copyWith(
           textTheme: GoogleFonts.interTextTheme(baseTheme.textTheme),
         ),
@@ -103,32 +106,34 @@ class _SplashScreenState extends State<SplashScreen> {
   var Name;
 
   void isLogin() async {
-    // final sp = context.read<SignInProvider>();
     FirebaseAuth auth = FirebaseAuth.instance;
     final user = auth.currentUser;
     SharedPreferences sharedPreferences = await SharedPreferences.getInstance();
     Name = sharedPreferences.getString('fullname') ?? "";
 
-    if (user != null) {
+    final hasSession = await UserViewModel.hasActiveSession();
+    final isGuest = Name == "Guest" &&
+        (sharedPreferences.getString('role')?.trim() ?? '') == "Guest";
+
+    if (user != null && hasSession) {
       Timer(const Duration(seconds: 2), () {
         Get.offAll(() => MainScreen());
       });
-    }
-    else
-    {
-
-      String _name = sharedPreferences.getString('fullname') ?? "";
-      context.read<AuthViewModel>().userName = _name;
-      if (_name == "Guest") {
-        Timer(const Duration(seconds: 2), () {
-          Get.offAll(() => MainScreen());
-        });
-      } else {
-        splashServices.checkAuthentication(context);
-      }
-
+      return;
     }
 
+    context.read<AuthViewModel>().userName = Name;
+    if (isGuest) {
+      Timer(const Duration(seconds: 2), () {
+        Get.offAll(() => MainScreen());
+      });
+    } else if (hasSession) {
+      splashServices.checkAuthentication(context);
+    } else {
+      Timer(const Duration(seconds: 2), () {
+        Get.offAll(() => LoginScreen());
+      });
+    }
   }
 
   @override
@@ -138,7 +143,7 @@ class _SplashScreenState extends State<SplashScreen> {
     return Container(
       decoration: BoxDecoration(
         image: DecorationImage(
-          image: AssetImage("assets/newpacks/onboarding.png"),
+          image: AssetImage("assets/images/onboarding.png"),
           fit: BoxFit.cover,
         ),
       ),
@@ -147,13 +152,11 @@ class _SplashScreenState extends State<SplashScreen> {
         body: Container(
           width: double.infinity,
           child: Column(
-            // crossAxisAlignment: CrossAxisAlignment.center,
-            // mainAxisAlignment: MainAxisAlignment.center,
             children: [
               SizedBox(height: res_height * 0.1),
               Container(
                 width: res_width * 0.6,
-                child: Image.asset('assets/newpacks/appicon.png'),
+                child: Image.asset('assets/images/appicon.png'),
               ),
               SizedBox(height: res_height * 0.34),
               Container(
@@ -197,50 +200,9 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
               ),
 
-              // SizedBox(height: res_height * 0.058),
 
-              // Container(
-              //   width: res_width * 0.8,
-              //   child: Row(
-              //     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              //     children: [
-              //       Text(
-              //         'Skip',
-              //         textAlign: TextAlign.start,
 
-              //         style: TextStyle(
-              //           fontWeight: FontWeight.w900,
-              //           fontSize: 16,
-              //           color: Colors.white,
-              //         ),
-              //       ),
 
-              //       GestureDetector(
-              //         onTap: () {
-              //           // Get.to(() => LoginScreen());
-              //           // Get.to(() => MainScreen());
-              //         },
-              //         child: Container(
-              //           width: res_width * 0.15,
-              //           decoration: BoxDecoration(
-              //             color: AppColors.primaryColor,
-              //             borderRadius: BorderRadius.all(Radius.circular(13)),
-              //           ),
-              //           child: Padding(
-              //             padding: const EdgeInsets.all(15.0),
-              //             child: Center(
-              //               child: Icon(
-              //                 Icons.arrow_forward,
-              //                 color: Colors.white,
-              //                 //size: 30,
-              //               ),
-              //             ),
-              //           ),
-              //         ),
-              //       ),
-              //     ],
-              //   ),
-              // ),
             ],
           ),
         ),

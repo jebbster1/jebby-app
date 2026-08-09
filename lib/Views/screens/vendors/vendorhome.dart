@@ -9,6 +9,8 @@ import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
+import 'package:jebby/utils/profile_image.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/Views/screens/mainfolder/drawer.dart';
 import 'package:jebby/Views/screens/vendors/MyOrders.dart';
@@ -32,10 +34,10 @@ class VendrosHomeScreen extends StatefulWidget {
 }
 
 class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
-  Future getData() async {
+  Future<void> getData() async {
     final sp = context.read<SignInProvider>();
     final usp = context.read<UserViewModel>();
-    usp.getUser();
+    await usp.getUser();
     sp.getDataFromSharedPreferences();
   }
 
@@ -48,7 +50,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
   String? role;
   String? profileAddress;
   String? profileImage;
-  double averageRating = 4.0;
+  double averageRating = 0;
   int totalReviews = 0;
   String Url = dotenv.env['baseUrlM'] ?? '';
 
@@ -71,17 +73,19 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
 
   Future getProductsApi(String id) async {
     try {
-      final response = await http.get(Uri.parse('$Url/UserProfileGetById/$id'));
+      final response = await http.get(
+        Uri.parse('$Url/UserProfileGetById/$id'),
+        headers: await ApiHeaders.json(),
+      );
       var data = jsonDecode(response.body.toString());
       if (data["data"] != null &&
           data["data"] is List &&
           (data["data"] as List).isNotEmpty) {
         final profile = data["data"][0];
-        final apiAddress =
-            profile["address"]?.toString() ??
-            profile["location"]?.toString() ??
-            "";
-        final apiImage = profile["image"]?.toString() ?? "";
+        final apiAddress = profile["address"]?.toString() ?? "";
+        final apiImage = ProfileImage.sanitizePath(
+          profile["profile_image"]?.toString(),
+        );
         final apiName = profile["name"]?.toString() ?? "";
         if (mounted) {
           setState(() {
@@ -92,7 +96,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
         }
         final prefs = await SharedPreferences.getInstance();
         prefs.setString('address', apiAddress);
-        prefs.setString('image', apiImage);
+        prefs.setString('profileImage', apiImage);
         if (apiName.isNotEmpty) prefs.setString('fullname', apiName);
       }
     } catch (e) {
@@ -102,10 +106,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
 
   Widget _buildProfileAvatar() {
     final sp = context.read<SignInProvider>();
-    final hasApiImage =
-        profileImage != null &&
-        profileImage != "null" &&
-        profileImage!.trim().isNotEmpty;
+    final hasApiImage = ProfileImage.isValidPath(profileImage);
     final imageUrl =
         hasApiImage
             ? (profileImage!.startsWith('http')
@@ -139,9 +140,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
         ),
       );
     }
-    if (sp.imageUrl != null &&
-        sp.imageUrl != "null" &&
-        sp.imageUrl!.trim().isNotEmpty) {
+    if (sp.imageUrl != null && sp.imageUrl!.trim().isNotEmpty) {
       return CircleAvatar(
         radius: 38,
         backgroundColor: Colors.white,
@@ -181,16 +180,23 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
 
   void _fetchReviews(String id) {
     ApiRepository.shared.reviewsByVendorId(id, (reviewsData) {
-      if (mounted && reviewsData.data != null && reviewsData.data!.isNotEmpty) {
-        double sum = 0;
-        for (var r in reviewsData.data!) {
-          sum += (r.stars ?? 0).toDouble();
-        }
+      if (!mounted) return;
+      final reviews = reviewsData.data ?? [];
+      if (reviews.isEmpty) {
         setState(() {
-          averageRating = sum / reviewsData.data!.length;
-          totalReviews = reviewsData.totalreviews ?? reviewsData.data!.length;
+          averageRating = 0;
+          totalReviews = reviewsData.totalreviews ?? 0;
         });
+        return;
       }
+      double sum = 0;
+      for (var r in reviews) {
+        sum += (r.stars ?? 0).toDouble();
+      }
+      setState(() {
+        averageRating = sum / reviews.length;
+        totalReviews = reviewsData.totalreviews ?? reviews.length;
+      });
     }, (error) {});
   }
 
@@ -267,8 +273,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
                           Expanded(
                             child: Text(
                               (profileAddress == null ||
-                                      profileAddress!.trim().isEmpty ||
-                                      profileAddress == "null")
+                                      profileAddress!.trim().isEmpty)
                                   ? "Add your address"
                                   : profileAddress!,
                               style: GoogleFonts.inter(
@@ -495,10 +500,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
 
     final top = visible.take(3).toList();
     return top.map((item) {
-      final amount =
-          (item.negoPrice != null && item.negoPrice.toString() != '0')
-              ? item.negoPrice.toString()
-              : item.totalPrice.toString();
+      final amount = item.totalPrice.toString();
       return todayItem(
         item.name?.toString().isNotEmpty == true
             ? item.name.toString()
@@ -584,31 +586,31 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
   void check() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
 
-    prefs.getBool('time') == false
-        ? notiTimer().timer?.cancel()
-        : notiTimer().timer =
-            prefs.getBool('time') == false
-                ? notiTimer().timer?.cancel()
-                : new Timer.periodic(Duration(seconds: 5), (_) {
-                  if (token == null ||
-                      token == "" ||
-                      role == "" ||
-                      role == null ||
-                      prefs.getBool('time') != true) {
-                    cancelTimer();
-                  } else {
-                    prefs.getBool('notifiction') == true
-                        ? getNotifications()
-                        : prefs.getBool('notifiction') == null
-                        ? getNotifications()
-                        : null;
-                  }
-                });
+    if (prefs.getBool('time') == false) {
+      cancelTimer();
+      return;
+    }
+
+    cancelTimer();
+    notiTimer().timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (token == null ||
+          token == "" ||
+          role == "" ||
+          role == null ||
+          prefs.getBool('time') != true) {
+        cancelTimer();
+      } else {
+        prefs.getBool('notifiction') == true
+            ? getNotifications()
+            : prefs.getBool('notifiction') == null
+            ? getNotifications()
+            : null;
+      }
+    });
   }
 
   cancelTimer() {
-    notiTimer().timer.cancel();
-    notiTimer().timer = null;
+    notiTimer().cancelTimer();
   }
 
   @override
@@ -626,8 +628,8 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
 
   void initState() {
     super.initState();
-    getData();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await getData();
       if (mounted) profileData(context);
     });
     func();
@@ -875,17 +877,14 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(
-        // image: DecorationImage(
-        //   image: AssetImage("assets/slicing/bg2.jpg"),
-        //   fit: BoxFit.cover,
-        // ),
-      ),
       child: Scaffold(
-        // backgroundColor: Colors.transparent,key: _key,
         key: _key,
 
-        drawer: DrawerScreen(stack: "vendor"),
+        drawer: Consumer<UserViewModel>(
+          builder: (context, usp, _) => DrawerScreen(
+            key: ValueKey('drawer-${usp.role}'),
+          ),
+        ),
         backgroundColor: const Color(0xFFF3F3F5),
         appBar: AppBar(
           backgroundColor: Colors.transparent,
@@ -911,7 +910,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
             child: Padding(
               padding: const EdgeInsets.all(17.0),
               child: Image.asset(
-                'assets/slicing/mingcute_menu-fill.png',
+                'assets/images/mingcute_menu-fill.png',
                 color: Colors.black,
               ),
             ),
@@ -937,7 +936,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
                       width: 36,
                       child: Center(
                         child: Image.asset(
-                          'assets/slicing/notificationnew.png',
+                          'assets/images/notificationnew.png',
                           height: 20,
                           width: 20,
                           fit: BoxFit.contain,
@@ -985,7 +984,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
                   width: 36,
                   child: Center(
                     child: Image.asset(
-                      'assets/slicing/personnew.png',
+                      'assets/images/personnew.png',
                       height: 20,
                       width: 20,
                       fit: BoxFit.contain,
@@ -1005,25 +1004,8 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 /// SEARCH BAR
-                // Container(
-                //   height: 50,
-                //   padding: EdgeInsets.symmetric(horizontal: 5),
-                //   decoration: BoxDecoration(
-                //     color: Colors.white,
-                //     borderRadius: BorderRadius.circular(25),
-                //   ),
-                //   child: TextField(
-                //     decoration: InputDecoration(
-                //       hintText: "Search by Product, Orders e.t.c",
-                //       hintStyle: GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 15, fontWeight: FontWeight.w400),
-                //       prefixIcon: Icon(Icons.search, color: Colors.grey.shade500, size: 22),
-                //       border: InputBorder.none,
                 //       contentPadding: EdgeInsets.symmetric(vertical: 14),
-                //     ),
-                //   ),
-                // ),
 
-                // SizedBox(height: 24),
 
                 /// PROFILE CARD
                 profileCard(),
@@ -1037,7 +1019,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
                       child: featureCard(
                         "My Products",
                         "Manage Products",
-                        "assets/newpacks/myproducts.png",
+                        "assets/images/myproducts.png",
                       ),
                     ),
                     SizedBox(width: 16),
@@ -1045,7 +1027,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
                       child: featureCard(
                         "My Orders",
                         "Track your rentals.",
-                        "assets/newpacks/myorders1.png",
+                        "assets/images/myorders1.png",
                       ),
                     ),
                   ],
@@ -1067,41 +1049,6 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
             ),
           ),
         ),
-        // body: SingleChildScrollView(
-        //   child: Container(
-        //     width: double.infinity,
-        //     child: Column(
-        //       children: [
-        //         SizedBox(height: res_height * 0.015),
-        //         Container(
-        //           width: res_width * 0.9,
-        //           child: Center(
-        //             child: Wrap(
-        //               spacing: 15,
-        //               runSpacing: 15,
-        //               children: [
-        //                 contBox(
-        //                   txt: "Profile",
-        //                   img: 'assets/slicing/user_thick.png',
-        //                 ),
-        //                 contBox(
-        //                   txt: "Product",
-        //                   img:
-        //                       'assets/slicing/Icon awesome-shopping-basket@3x.png',
-        //                 ),
-        //                 contBox(txt: "Orders", img: 'assets/slicing/layer.png'),
-        //                 contBox(
-        //                   txt: "Transactions",
-        //                   img: 'assets/slicing/swap.png',
-        //                 ),
-        //               ],
-        //             ),
-        //           ),
-        //         ),
-        //       ],
-        //     ),
-        //   ),
-        // ),
       ),
     );
   }
@@ -1118,9 +1065,6 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
           Get.to(() => TransactionListScreen());
         }
         if (txt == "Product") {
-          // final bottomcontroller = Get.put(BottomController());
-          // bottomcontroller.navBarChange(1);
-          // Get.to(() => MainScreen());
           Get.to(() => ProductListScreen(side: false));
         }
         if (txt == "Profile") {
@@ -1151,8 +1095,6 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
                   width: res_width * 0.135,
                   child: Image.asset(
                     '$img',
-                    // height: 10,
-                    // width: 10,
                   ),
                 ),
               ],

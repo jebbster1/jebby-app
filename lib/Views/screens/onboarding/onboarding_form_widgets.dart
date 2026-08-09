@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:jebby/Views/helper/colors.dart';
-import 'package:jebby/model/provider_onboarding_data.dart';
+import 'package:jebby/Views/widgets/address_autocomplete_field.dart';
 import 'package:jebby/utils/google_places_address.dart';
 
 const Color _fieldFill = Color(0xFFF7F7F9);
@@ -325,7 +325,7 @@ Future<DateTime?> showOnboardingDatePicker(
   );
 }
 
-class OnboardingAddressAutocompleteField extends StatefulWidget {
+class OnboardingAddressAutocompleteField extends StatelessWidget {
   final TextEditingController controller;
   final ParsedUsAddress? resolvedAddress;
   final Future<void> Function(ParsedUsAddress) onAddressResolved;
@@ -340,148 +340,32 @@ class OnboardingAddressAutocompleteField extends StatefulWidget {
   });
 
   @override
-  State<OnboardingAddressAutocompleteField> createState() =>
-      _OnboardingAddressAutocompleteFieldState();
-}
-
-class _OnboardingAddressAutocompleteFieldState
-    extends State<OnboardingAddressAutocompleteField> {
-  final GooglePlacesAddressService _placesService = GooglePlacesAddressService();
-  List<Map<String, dynamic>> _predictions = [];
-  bool _loadingDetails = false;
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
-  void _onQueryChanged(String value) {
-    widget.onEditingStarted?.call();
-    _fetchPredictions(value);
-  }
-
-  Future<void> _fetchPredictions(String input) async {
-    if (input.trim().length < 3) {
-      if (mounted) setState(() => _predictions = []);
-      return;
-    }
-
-    try {
-      final results = await _placesService.fetchPredictions(input);
-      if (mounted) setState(() => _predictions = results.take(5).toList());
-    } catch (_) {
-      if (mounted) setState(() => _predictions = []);
-    }
-  }
-
-  Future<void> _selectPrediction(Map<String, dynamic> prediction) async {
-    final description = prediction['description']?.toString() ?? '';
-    final placeId = prediction['place_id']?.toString() ?? '';
-    if (placeId.isEmpty) return;
-
-    setState(() {
-      _loadingDetails = true;
-      _predictions = [];
-    });
-    widget.controller.text = description;
-
-    try {
-      final parsed = await _placesService.resolvePlace(placeId);
-      if (!mounted) return;
-      if (parsed != null) {
-        await widget.onAddressResolved(parsed);
-      }
-    } finally {
-      if (mounted) setState(() => _loadingDetails = false);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final resolved = widget.resolvedAddress;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        OnboardingTextField(
-          controller: widget.controller,
-          hint: 'Start typing your address',
-          onChanged: _onQueryChanged,
-          suffix: _loadingDetails
-              ? const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              : null,
+    return AddressAutocompleteField(
+      controller: controller,
+      resolvedAddress: resolvedAddress,
+      onEditingStarted: onEditingStarted,
+      onAddressSelected: onAddressResolved,
+      hint: 'Start typing your address',
+      decoration: InputDecoration(
+        hintText: 'Start typing your address',
+        hintStyle: GoogleFonts.inter(
+          fontSize: 15,
+          color: const Color(0xFF8F9098),
         ),
-        if (_predictions.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _predictions.length,
-              separatorBuilder: (_, __) =>
-                  Divider(height: 1, color: Colors.grey.shade200),
-              itemBuilder: (context, index) {
-                final prediction = _predictions[index];
-                final description = prediction['description']?.toString() ?? '';
-                return ListTile(
-                  dense: true,
-                  leading: Icon(Icons.place_outlined, color: darkBlue, size: 20),
-                  title: Text(
-                    description,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  onTap: () => _selectPrediction(prediction),
-                );
-              },
-            ),
-          ),
-        if (resolved != null && resolved.isComplete) ...[
-          const SizedBox(height: 10),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEEF6EE),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFB8D4B8)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.check_circle_outline, size: 18, color: Colors.green.shade700),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    resolved.displaySummary,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                      height: 1.35,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
+        filled: true,
+        fillColor: _fieldFill,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: darkBlue, width: 1.5),
+        ),
+      ),
     );
   }
 }
@@ -489,161 +373,8 @@ class _OnboardingAddressAutocompleteFieldState
 Future<ParsedUsAddress?> showOnboardingMissingAddressDialog(
   BuildContext context, {
   required ParsedUsAddress initial,
-}) {
-  return showDialog<ParsedUsAddress>(
-    context: context,
-    barrierDismissible: false,
-    builder: (dialogContext) => _MissingAddressDialog(initial: initial),
-  );
-}
-
-class _MissingAddressDialog extends StatefulWidget {
-  final ParsedUsAddress initial;
-
-  const _MissingAddressDialog({required this.initial});
-
-  @override
-  State<_MissingAddressDialog> createState() => _MissingAddressDialogState();
-}
-
-class _MissingAddressDialogState extends State<_MissingAddressDialog> {
-  late final TextEditingController _line1Controller;
-  late final TextEditingController _cityController;
-  late final TextEditingController _postalController;
-  late String _stateCode;
-
-  ParsedUsAddress get initial => widget.initial;
-
-  @override
-  void initState() {
-    super.initState();
-    _line1Controller = TextEditingController(text: initial.line1);
-    _cityController = TextEditingController(text: initial.city);
-    _postalController = TextEditingController(text: initial.postalCode);
-    _stateCode = initial.state.toUpperCase();
-  }
-
-  @override
-  void dispose() {
-    _line1Controller.dispose();
-    _cityController.dispose();
-    _postalController.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    final updated = ParsedUsAddress(
-      line1: initial.hasLine1 ? initial.line1 : _line1Controller.text.trim(),
-      city: initial.hasCity ? initial.city : _cityController.text.trim(),
-      state: initial.hasState ? initial.state : _stateCode.toUpperCase(),
-      postalCode: initial.hasPostalCode
-          ? initial.postalCode
-          : _postalController.text.trim(),
-    );
-    if (!updated.isComplete) return;
-    Navigator.pop(context, updated);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      title: Text(
-        'Complete your address',
-        style: GoogleFonts.inter(
-          fontWeight: FontWeight.w700,
-          fontSize: 18,
-          color: Colors.black87,
-        ),
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'We could not read every part of that address. Please fill in the missing details.',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: Colors.black54,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (!initial.hasLine1) ...[
-              const OnboardingFieldLabel('Street address'),
-              OnboardingTextField(
-                controller: _line1Controller,
-                hint: '123 Main St',
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (!initial.hasCity) ...[
-              const OnboardingFieldLabel('City'),
-              OnboardingTextField(
-                controller: _cityController,
-                hint: 'City',
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (!initial.hasState) ...[
-              const OnboardingFieldLabel('State'),
-              OnboardingDropdownField<String>(
-                value: _stateCode,
-                items: ProviderOnboardingData.usStates
-                    .map((state) => state['code']!)
-                    .toList(),
-                hint: 'Select state',
-                labelBuilder: (code) => ProviderOnboardingData.stateName(code),
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() => _stateCode = value);
-                },
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (!initial.hasPostalCode) ...[
-              const OnboardingFieldLabel('ZIP code'),
-              OnboardingTextField(
-                controller: _postalController,
-                hint: '94102',
-                keyboardType: TextInputType.number,
-                maxLength: 10,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            'Cancel',
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w600,
-              color: Colors.black54,
-            ),
-          ),
-        ),
-        TextButton(
-          onPressed: _save,
-          child: Text(
-            'Save',
-            style: GoogleFonts.inter(
-              fontWeight: FontWeight.w700,
-              color: darkBlue,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
+}) =>
+    showMissingAddressDialog(context, initial: initial);
 
 Future<ImageSource?> showOnboardingImageSourceSheet(BuildContext context) {
   return showModalBottomSheet<ImageSource>(

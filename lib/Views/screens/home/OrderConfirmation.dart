@@ -7,6 +7,9 @@ import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/Views/widgets/address_autocomplete_field.dart';
+import 'package:jebby/utils/google_places_address.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/view_model/getTax_modal.dart';
@@ -84,9 +87,9 @@ class _OrderConfirmationScreenState extends State<OrderConfirmationScreen> {
   }
 
   late var vendorAccountId;
-  late var vendorPPEmail;
   bool orderVisibility = false;
   final _locationController = TextEditingController();
+  ParsedUsAddress? _resolvedAddress;
 
   var newLocation = "";
 
@@ -98,8 +101,6 @@ class _OrderConfirmationScreenState extends State<OrderConfirmationScreen> {
           setState(() {
             vendorAccountId =
                 ApiRepository.shared.getUserCredentialModelList!.data![0].accountId.toString();
-            vendorPPEmail =
-                ApiRepository.shared.getUserCredentialModelList!.data![0].paypalEmail.toString();
             orderVisibility = true;
           });
         }
@@ -115,35 +116,42 @@ class _OrderConfirmationScreenState extends State<OrderConfirmationScreen> {
 
   var Latitiude = "";
   var Longitude = "";
-  List<dynamic> _placeList = [];
-  String _sessionToken = '1234567890';
+
+  void _clearResolvedAddress() {
+    setState(() {
+      _resolvedAddress = const ParsedUsAddress();
+      Latitiude = "";
+      Longitude = "";
+      newLocation = "";
+    });
+  }
+
+  Future<void> _applySelectedAddress(ParsedUsAddress address) async {
+    setState(() {
+      _resolvedAddress = address;
+      _locationController.text = address.displayLine;
+      newLocation = address.displayLine;
+      if (address.hasCoordinates) {
+        Latitiude = address.latitude!.toString();
+        Longitude = address.longitude!.toString();
+      } else {
+        Latitiude = "";
+        Longitude = "";
+        newLocation = "";
+      }
+    });
+
+    if (address.hasCoordinates) {
+      await _getZipCodeFromCoordinates(address.latitude!, address.longitude!);
+    } else if (address.hasPostalCode) {
+      await getSalesTax(address.postalCode);
+    }
+  }
 
   @override
   void dispose() {
     _locationController.dispose();
     super.dispose();
-  }
-
-  _onChanged() {
-    getSuggestion(_locationController.text);
-  }
-
-  void getSuggestion(String input) async {
-    String kPLACES_API_KEY = dotenv.env['kPLACES_API_KEY'] ?? 'No secret key found';
-
-    try {
-      String baseURL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
-      String request = '$baseURL?input=$input&key=$kPLACES_API_KEY&sessiontoken=$_sessionToken';
-      var response = await http.get(Uri.parse(request));
-      jsonDecode(response.body);
-      if (response.statusCode == 200) {
-        setState(() {
-          _placeList = json.decode(response.body)['predictions'];
-        });
-      } else {
-        throw Exception('Failed to load predictions');
-      }
-    } catch (e) {}
   }
 
   String? zipCode;
@@ -231,7 +239,7 @@ class _OrderConfirmationScreenState extends State<OrderConfirmationScreen> {
 
   String _productImageUrl() {
     final p = widget.image?.toString().trim() ?? '';
-    if (p.isEmpty || p == 'null') return '';
+    if (p.isEmpty) return '';
     if (p.toLowerCase().startsWith('http')) return p;
     final base = AppUrl.baseUrlM;
     if (base.endsWith('/')) return base + (p.startsWith('/') ? p.substring(1) : p);
@@ -324,6 +332,18 @@ class _OrderConfirmationScreenState extends State<OrderConfirmationScreen> {
                   onPressed:
                       orderVisibility
                           ? () {
+                            if (locationVisibility &&
+                                _locationController.text.trim().isNotEmpty &&
+                                ParsedUsAddress.mapLocationValidationError(
+                                      _resolvedAddress,
+                                    ) !=
+                                    null) {
+                              showAppErrorSnackbar(
+                                ParsedUsAddress.selectFromSuggestionsMessage,
+                                title: 'Required',
+                              );
+                              return;
+                            }
                             ApiRepository.shared.reOrderStripePayment(
                               widget.price,
                               vendorAccountId,
@@ -469,7 +489,7 @@ class _OrderConfirmationScreenState extends State<OrderConfirmationScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Delivery address',
+                  'Rental location',
                   style: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -520,15 +540,12 @@ class _OrderConfirmationScreenState extends State<OrderConfirmationScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              TextField(
+              AddressAutocompleteField(
                 controller: _locationController,
-                onChanged: (value) {
-                  setState(() {
-                    _onChanged();
-                    if (value.isNotEmpty) newLocation = value;
-                  });
-                },
-                style: GoogleFonts.inter(fontSize: 15),
+                resolvedAddress: _resolvedAddress,
+                onEditingStarted: _clearResolvedAddress,
+                onAddressSelected: _applySelectedAddress,
+                hint: 'Search address',
                 decoration: InputDecoration(
                   hintText: 'Search address',
                   hintStyle: GoogleFonts.inter(color: Colors.grey),
@@ -540,56 +557,17 @@ class _OrderConfirmationScreenState extends State<OrderConfirmationScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primaryColor, width: 1.5),
+                    borderSide: const BorderSide(
+                      color: AppColors.primaryColor,
+                      width: 1.5,
+                    ),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                 ),
               ),
-              if (_locationController.text.isNotEmpty && _placeList.isNotEmpty)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: _placeList.length,
-                    itemBuilder: (context, index) {
-                      String name = _placeList[index]["description"];
-                      if (!_locationController.text.isNotEmpty) {
-                        return const SizedBox.shrink();
-                      }
-                      if (!name.toLowerCase().contains(_locationController.text.toLowerCase())) {
-                        return const SizedBox.shrink();
-                      }
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        onTap: () async {
-                          _locationController.text = _placeList[index]["description"];
-                          List<Location> location = await locationFromAddress(
-                            _placeList[index]["description"],
-                          );
-
-                          setState(() {
-                            Latitiude = location.last.latitude.toString();
-                            Longitude = location.last.longitude.toString();
-                            _getZipCodeFromCoordinates(
-                              location.last.latitude,
-                              location.last.longitude,
-                            );
-                            _placeList = [];
-                          });
-                        },
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.primaryColor.withValues(alpha: 0.15),
-                          child: Icon(Icons.pin_drop, color: AppColors.primaryColor, size: 22),
-                        ),
-                        title: Text(
-                          _placeList[index]["description"],
-                          style: GoogleFonts.inter(fontSize: 14),
-                        ),
-                      );
-                    },
-                  ),
-                ),
             ],
           ],
         ),

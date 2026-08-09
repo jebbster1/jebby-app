@@ -11,7 +11,9 @@ import 'package:jebby/model/onboarding_state.dart';
 import 'package:jebby/model/provider_onboarding_data.dart';
 import 'package:jebby/respository/auth_repository.dart';
 import 'package:jebby/view_model/apiServices.dart';
+import 'package:jebby/view_model/user_view_model.dart';
 import 'package:jebby/Services/analytics_service.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 OnboardingController ensureOnboardingController() {
@@ -25,7 +27,7 @@ class OnboardingController extends GetxController {
   static const String _keyStep = 'onboarding_step';
   static const String _keyStatus = 'onboarding_status';
   static const String _keyStripeAccountId = 'stripe_account_id';
-  static const String _keyStripeComplete = 'stripe_onboarding_complete';
+  static const String _keyStripeComplete = 'is_stripe_onboarding_complete';
   static const String _keyProviderData = 'provider_onboarding_data';
   static const String _keyIntroSeen = 'onboarding_intro_seen';
 
@@ -48,20 +50,24 @@ class OnboardingController extends GetxController {
     String? phone,
   }) async {
     this.userId = userId;
-    if (name != null && name.isNotEmpty) userName = name;
-    if (email != null && email.isNotEmpty) userEmail = email;
-    if (phone != null && phone.isNotEmpty) userPhone = _sanitizePhone(phone);
 
     final prefs = await SharedPreferences.getInstance();
-    if (userPhone.isEmpty) {
-      userPhone = _sanitizePhone(prefs.getString('phoneNumber') ?? '');
-    }
+    userName = _resolveProfileName(
+      name ?? prefs.getString('fullname') ?? '',
+    );
+    userEmail = _resolveProfileEmail(
+      email ?? prefs.getString('email') ?? '',
+    );
+    userPhone = _sanitizePhone(
+      phone ?? prefs.getString('phoneNumber') ?? '',
+    );
 
     isLoading = true;
     update();
 
     await _loadFromLocalCache();
     await _loadProviderData();
+    await _sanitizeLoadedProviderIdentity();
     _prefillProviderDataFromProfile();
     await _reconcileWithServer();
     await _reconcileWithStripeStatus();
@@ -73,7 +79,7 @@ class OnboardingController extends GetxController {
   Future<void> _loadFromLocalCache() async {
     final prefs = await SharedPreferences.getInstance();
     final role = prefs.getString('role') ?? '0';
-    final identityVerified = prefs.getBool('identity_verified') ?? false;
+    final identityVerified = prefs.getBool('is_identity_verified') ?? false;
 
     final rawStep = prefs.getInt(_keyStep) ?? OnboardingSteps.formStart;
     final rawStatus = prefs.getString(_keyStatus);
@@ -259,6 +265,21 @@ class OnboardingController extends GetxController {
     );
   }
 
+  Future<void> _sanitizeLoadedProviderIdentity() async {
+    var changed = false;
+    if (_isPlaceholderName(providerData.firstName)) {
+      providerData.firstName = '';
+      changed = true;
+    }
+    if (!_isValidStoredPhone(providerData.phone)) {
+      providerData.phone = '';
+      changed = true;
+    }
+    if (changed) {
+      await _persistProviderData();
+    }
+  }
+
   void _prefillProviderDataFromProfile() {
     if (providerData.firstName.isEmpty && userName.isNotEmpty) {
       final parts = userName.trim().split(RegExp(r'\s+'));
@@ -321,6 +342,11 @@ class OnboardingController extends GetxController {
       }
     } catch (_) {
       await prefs.setString('role', '1');
+    }
+
+    final ctx = Get.context;
+    if (ctx != null) {
+      ctx.read<UserViewModel>().setRole('1');
     }
 
     await markComplete();
@@ -397,15 +423,42 @@ class OnboardingController extends GetxController {
     }
     await prefs.setBool(_keyStripeComplete, _state.stripeOnboardingComplete);
     if (setIdentityVerified || _state.isComplete) {
-      await prefs.setBool('identity_verified', true);
+      await prefs.setBool('is_identity_verified', true);
       await prefs.setString('stripe_verification_status', 'verified');
     }
   }
 
+  String _resolveProfileName(String value) {
+    final trimmed = value.trim();
+    if (_isPlaceholderName(trimmed)) return '';
+    return trimmed;
+  }
+
+  String _resolveProfileEmail(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') return '';
+    return trimmed;
+  }
+
+  bool _isPlaceholderName(String value) {
+    final normalized = value.trim().toLowerCase();
+    return normalized.isEmpty ||
+        normalized == 'guest' ||
+        normalized == 'null';
+  }
+
+  bool _isValidStoredPhone(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return false;
+    return ProviderOnboardingData.isValidUsPhone(trimmed);
+  }
+
   String _sanitizePhone(String value) {
     final trimmed = value.trim();
-    if (trimmed.isEmpty || trimmed == 'null') return '';
-    return ProviderOnboardingData.formatPhoneE164(trimmed);
+    if (trimmed.isEmpty) return '';
+    final formatted = ProviderOnboardingData.formatPhoneE164(trimmed);
+    if (!_isValidStoredPhone(formatted)) return '';
+    return formatted;
   }
 
   void _syncToServer() {
@@ -418,7 +471,7 @@ class OnboardingController extends GetxController {
         'onboarding_status': _state.onboardingStatus,
         if (_state.stripeAccountId != null)
           'stripe_account_id': _state.stripeAccountId,
-        'stripe_onboarding_complete': _state.stripeOnboardingComplete,
+        'is_stripe_onboarding_complete': _state.stripeOnboardingComplete,
       },
       (_) {},
       (_) {},

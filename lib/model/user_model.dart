@@ -23,18 +23,6 @@ class UserModel {
     this.phoneNumber,
   });
 
-  UserModel.fromJson(Map<String, dynamic> json) {
-    status = json['status'];
-    name = json['name'];
-    email = json['email'];
-    address = json['address'];
-    id = json['id'];
-    role = json['role'];
-    source = json['source'];
-    token = json['token'];
-    isGuest = false;
-  }
-
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = new Map<String, dynamic>();
     data['status'] = this.status;
@@ -57,17 +45,6 @@ class UpdatedModel {
 
   UpdatedModel({this.status, this.data, this.message});
 
-  UpdatedModel.fromJson(Map<String, dynamic> json) {
-    status = json['status'];
-    if (json['data'] != null) {
-      data = <Data>[];
-      json['data'].forEach((v) {
-        data!.add(new Data.fromJson(v));
-      });
-    }
-    message = json['message'];
-  }
-
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = new Map<String, dynamic>();
     data['status'] = this.status;
@@ -81,10 +58,10 @@ class UpdatedModel {
 
 class Data {
   String? id;
-  String? image;
+  String? profileImage;
   String? name;
   String? email;
-  String? number;
+  String? phoneNumber;
   String? address;
   String? userId;
   String? latitude;
@@ -92,23 +69,22 @@ class Data {
 
   Data({
     this.id,
-    this.image,
+    this.profileImage,
     this.name,
     this.email,
-    this.number,
+    this.phoneNumber,
     this.address,
     this.userId,
     this.latitude,
     this.longitude,
-    required String phoneNumber,
   });
 
   Data.fromJson(Map<String, dynamic> json) {
     id = json['id'];
-    image = json['image'];
+    profileImage = json['profile_image'];
     name = json['name'];
     email = json['email'];
-    number = json['number'];
+    phoneNumber = json['phone_number'];
     address = json['address'];
     userId = json['user_id'];
     latitude = json['latitude'];
@@ -118,10 +94,10 @@ class Data {
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = new Map<String, dynamic>();
     data['id'] = this.id;
-    data['image'] = this.image;
+    data['profile_image'] = this.profileImage;
     data['name'] = this.name;
     data['email'] = this.email;
-    data['number'] = this.number;
+    data['phone_number'] = this.phoneNumber;
     data['address'] = this.address;
     data['user_id'] = this.userId;
     data['latitude'] = this.latitude;

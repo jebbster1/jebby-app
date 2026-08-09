@@ -4,7 +4,7 @@ import 'package:jebby/res/color.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import '../../../utils/utils.dart';
+import '../../../utils/show_snackbar.dart';
 import '../../../view_model/auth_view_model.dart';
 
 class ForgotScreen extends StatefulWidget {
@@ -25,7 +25,6 @@ class _ForgotScreenState extends State<ForgotScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authViewMode = Provider.of<AuthViewModel>(context);
     double res_width = MediaQuery.of(context).size.width;
 
     return Scaffold(
@@ -57,7 +56,7 @@ class _ForgotScreenState extends State<ForgotScreen> {
               flex: 45,
               child: Center(
                 child: Image.asset(
-                  'assets/slicing/padlock.png',
+                  'assets/images/padlock.png',
                   width: res_width * 0.5,
                   fit: BoxFit.contain,
                 ),
@@ -96,7 +95,7 @@ class _ForgotScreenState extends State<ForgotScreen> {
                       ),
                       SizedBox(height: 12),
                       Text(
-                        "No worries. Enter your email address below and we'll send you a link to reset your password.",
+                        "No worries. Enter your email address below and we'll send you a 4-digit verification code to reset your password.",
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(
                           fontSize: 15,
@@ -152,43 +151,59 @@ class _ForgotScreenState extends State<ForgotScreen> {
                         ),
                       ),
                       SizedBox(height: 28),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            if (_emailController.text.isEmpty) {
-                              Utils.flushBarErrorMessage(
-                                'Please enter email',
-                                context,
-                              );
-                            } else {
-                              Map data = {
-                                'email': _emailController.text.toString(),
-                              };
-                              authViewMode.forgetPasswordApi(
-                                data,
-                                context,
-                                "forgot",
-                              );
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaryColor,
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
+                      Consumer<AuthViewModel>(
+                        builder: (context, authViewMode, _) {
+                          final isLoading = authViewMode.signUpLoading;
+
+                          if (isLoading) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 15),
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.primaryColor,
+                                ),
+                              ),
+                            );
+                          }
+
+                          return SizedBox(
+                            width: double.infinity,
+                            height: 54,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                if (_emailController.text.isEmpty) {
+                                  showAppErrorSnackbar(
+                                    'Please enter email',
+                                    title: 'Required',
+                                  );
+                                } else {
+                                  authViewMode.forgetPasswordApi(
+                                    {
+                                      'email': _emailController.text.toString(),
+                                    },
+                                    context,
+                                    'forgot',
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primaryColor,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                              ),
+                              child: Text(
+                                'Continue',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            'Continue',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ],
                   ),

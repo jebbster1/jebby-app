@@ -5,10 +5,8 @@ class ProductUpdateModel {
   String? name;
   int? price;
   String? specifications;
-  String? serviceAgreements;
-  int? negotiation;
+  String? description;
   int? id;
-  List<int>? array;
 
   ProductUpdateModel({
     this.userId,
@@ -17,10 +15,8 @@ class ProductUpdateModel {
     this.name,
     this.price,
     this.specifications,
-    this.serviceAgreements,
-    this.negotiation,
+    this.description,
     this.id,
-    this.array,
   });
 
   ProductUpdateModel.fromJson(Map<String, dynamic> json) {
@@ -30,10 +26,8 @@ class ProductUpdateModel {
     name = json['name'];
     price = json['price'];
     specifications = json['specifications'];
-    serviceAgreements = json['service_agreements'];
-    negotiation = json['negotiation'];
+    description = json['description'];
     id = json['id'];
-    array = json['array'].cast<int>();
   }
 
   Map<String, dynamic> toJson() {
@@ -44,10 +38,8 @@ class ProductUpdateModel {
     data['name'] = this.name;
     data['price'] = this.price;
     data['specifications'] = this.specifications;
-    data['service_agreements'] = this.serviceAgreements;
-    data['negotiation'] = this.negotiation;
+    data['description'] = this.description;
     data['id'] = this.id;
-    data['array'] = this.array;
     return data;
   }
 }

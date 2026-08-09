@@ -8,7 +8,9 @@ import 'package:jebby/Views/screens/onboarding/onboarding_scaffold.dart';
 import 'package:jebby/Views/screens/onboarding/verify_identity_screen.dart';
 import 'package:jebby/model/provider_onboarding_data.dart';
 import 'package:jebby/utils/google_places_address.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/view_model/onboarding_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class PersonalDetailsScreen extends StatefulWidget {
   final bool returnToReview;
@@ -39,24 +41,49 @@ class _PersonalDetailsScreenState extends State<PersonalDetailsScreen> {
     if (!widget.returnToReview) {
       _controller.advanceTo(6);
     }
-    final data = _controller.providerData;
-    _firstNameController = TextEditingController(text: data.firstName);
-    _lastNameController = TextEditingController(text: data.lastName);
-    _emailController = TextEditingController(text: data.email);
-    _phoneController = TextEditingController(text: data.phone);
-    _ssnController = TextEditingController(text: data.ssnLast4 ?? '');
+    _firstNameController = TextEditingController();
+    _lastNameController = TextEditingController();
+    _emailController = TextEditingController();
+    _phoneController = TextEditingController();
+    _ssnController = TextEditingController();
+    _addressSearchController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrapFormFields());
+  }
+
+  Future<void> _bootstrapFormFields() async {
+    if (_controller.userId.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('id') ?? '';
+      if (userId.isNotEmpty) {
+        await _controller.loadAndReconcile(
+          userId: userId,
+          name: prefs.getString('fullname'),
+          email: prefs.getString('email'),
+          phone: prefs.getString('phoneNumber'),
+        );
+      }
+    }
+    if (!mounted) return;
+    _applyProviderData(_controller.providerData);
+  }
+
+  void _applyProviderData(ProviderOnboardingData data) {
+    _firstNameController.text = data.firstName;
+    _lastNameController.text = data.lastName;
+    _emailController.text = data.email;
+    _phoneController.text = data.phone;
+    _ssnController.text = data.ssnLast4 ?? '';
     _resolvedAddress = ParsedUsAddress.fromStored(
       line1: data.addressLine1,
       city: data.addressCity,
       state: data.addressState,
       postalCode: data.addressPostalCode,
     );
-    _addressSearchController = TextEditingController(
-      text: _resolvedAddress!.isComplete
-          ? _resolvedAddress!.displaySummary
-          : data.addressLine1,
-    );
+    _addressSearchController.text = _resolvedAddress!.isComplete
+        ? _resolvedAddress!.displaySummary
+        : data.addressLine1;
     _selectedDob = data.dateOfBirth;
+    setState(() {});
   }
 
   @override
@@ -91,23 +118,15 @@ class _PersonalDetailsScreenState extends State<PersonalDetailsScreen> {
     return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value.trim());
   }
 
-  void _showError(String message) {
-    Get.snackbar(
-      'Missing information',
-      message,
-      snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.black87,
-      colorText: Colors.white,
-      margin: const EdgeInsets.all(16),
-    );
-  }
+  void _showError(String message) =>
+      showAppErrorSnackbar(message, title: 'Required');
 
   void _clearResolvedAddress() {
     setState(() => _resolvedAddress = const ParsedUsAddress());
   }
 
   Future<void> _onAddressResolved(ParsedUsAddress parsed) async {
-    if (parsed.isComplete) {
+    if (parsed.isVerified) {
       setState(() {
         _resolvedAddress = parsed;
         _addressSearchController.text = parsed.displaySummary;
@@ -134,13 +153,13 @@ class _PersonalDetailsScreenState extends State<PersonalDetailsScreen> {
 
   Future<bool> _ensureCompleteAddress() async {
     var address = _resolvedAddress ?? const ParsedUsAddress();
-    if (address.isComplete) return true;
+    if (address.isVerified) return true;
 
     if (address.line1.isEmpty &&
         address.city.isEmpty &&
         address.state.isEmpty &&
         address.postalCode.isEmpty) {
-      _showError('Please search for and select your home address.');
+      _showError(ParsedUsAddress.selectFromSuggestionsMessage);
       return false;
     }
 
@@ -154,7 +173,11 @@ class _PersonalDetailsScreenState extends State<PersonalDetailsScreen> {
       _resolvedAddress = completed;
       _addressSearchController.text = completed.displaySummary;
     });
-    return completed.isComplete;
+    if (!completed.isVerified) {
+      _showError(ParsedUsAddress.selectFromSuggestionsMessage);
+      return false;
+    }
+    return true;
   }
 
   Future<void> _continue() async {

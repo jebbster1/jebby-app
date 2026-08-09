@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -29,14 +29,15 @@ import 'package:jebby/Views/screens/vendors/MyTransactions.dart';
 import 'package:jebby/Views/screens/vendors/vendorhome.dart';
 import 'package:jebby/Views/screens/onboarding/start_earning_button.dart';
 import 'package:jebby/Views/widgets/role_switcher_card.dart';
-import 'package:jebby/Views/support/contactsupport.dart';
-import 'package:jebby/res/color.dart';
+import 'package:jebby/utils/profile_image.dart';
+import 'package:jebby/utils/show_snackbar.dart';
+import 'package:jebby/Views/support/provide_feedback_screen.dart';
 import 'package:jebby/respository/auth_repository.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../Services/provider/sign_in_provider.dart';
-import '../../../model/user_model.dart';
+import '../../../view_model/auth_view_model.dart';
 import '../../../view_model/apiServices.dart';
 import '../../../view_model/onboarding_controller.dart';
 import '../../../view_model/user_view_model.dart';
@@ -44,9 +45,7 @@ import '../../controller/bottomcontroller.dart';
 
 class DrawerScreen extends StatefulWidget {
   final VoidCallback? onCloseDrawer;
-  final String stack;
-
-  DrawerScreen({Key? key, this.onCloseDrawer, this.stack = "home"})
+  DrawerScreen({Key? key, this.onCloseDrawer})
     : super(key: key);
 
   @override
@@ -56,51 +55,28 @@ class DrawerScreen extends StatefulWidget {
 class _DrawerScreenState extends State<DrawerScreen> {
   bool onboardingCompleted = false;
 
-  // String userName = "";
-  // String userEmail = "";
-  // bool checkLogin = false;
-  var shaka;
   final _myRepo = AuthRepository();
 
-  Future getData() async {
+  Future<void> _refreshDrawerState() async {
+    if (!mounted) return;
+
     final sp = context.read<SignInProvider>();
     sp.getDataFromSharedPreferences();
+
     final usp = context.read<UserViewModel>();
-    usp.getUpdatedUser();
-  }
+    final user = await usp.getUser();
 
-  Future<UserModel> getUserDate() => UserViewModel().getUser();
+    token = user.token.toString();
+    id = user.id.toString();
+    fullname = user.name.toString();
+    email = user.email.toString();
+    role = user.role.toString();
+    if (id != null && id!.isNotEmpty) {
+      getProductsApi(id!);
+    }
+    await _loadOnboardingController();
 
-  String? token;
-  String? id;
-  String? fullname;
-  String? email;
-  String? role;
-  String Url = dotenv.env['baseUrlM'] ?? 'No url found';
-
-  void profileData(BuildContext context) async {
-    getUserDate()
-        .then((value) async {
-          token = value.token.toString();
-          id = value.id.toString();
-          fullname = value.name.toString();
-          email = value.email.toString();
-          getProductsApi(id);
-          role = value.role.toString();
-
-          // Also update the UserViewModel to ensure consistency
-          final usp = context.read<UserViewModel>();
-          if (usp.role != value.role.toString()) {
-            usp.setRole(value.role.toString());
-          }
-
-          _loadOnboardingController();
-
-          if (mounted) {
-            setState(() {});
-          }
-        })
-        .onError((error, stackTrace) {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadOnboardingController() async {
@@ -120,8 +96,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
 
     if (mounted) {
       setState(() {
-        onboardingCompleted =
-            prefs.getBool('identity_verified') ?? false;
+        onboardingCompleted = prefs.getBool('is_identity_verified') ?? false;
       });
     }
   }
@@ -130,22 +105,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
   void initState() {
     super.initState();
     ensureOnboardingController();
-    getData();
-    profileData(context);
-    _loadOnboardingStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshDrawerState();
+      _loadOnboardingStatus();
+    });
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Refresh role data when dependencies change
-    profileData(context);
-    _loadOnboardingStatus(); // Refresh onboarding status
-  }
+  String? token;
+  String? id;
+  String? fullname;
+  String? email;
+  String? role;
+  String Url = dotenv.env['baseUrlM'] ?? 'No url found';
 
   void _loadOnboardingStatus() async {
     final prefs = await SharedPreferences.getInstance();
-    bool newOnboardingCompleted = prefs.getBool('identity_verified') ?? false;
+    bool newOnboardingCompleted =
+        prefs.getBool('is_identity_verified') ?? false;
 
     setState(() {
       onboardingCompleted = newOnboardingCompleted;
@@ -157,7 +133,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
   Future<void> _switchRole(BuildContext context, {required bool toEarn}) async {
     final usp = context.read<UserViewModel>();
     final sp = context.read<SignInProvider>();
-    final currentIsEarn = usp.role == "1";
+    final currentIsEarn = usp.isEarnMode;
     if (currentIsEarn == toEarn || _roleSwitchInProgress) return;
 
     setState(() => _roleSwitchInProgress = true);
@@ -168,25 +144,38 @@ class _DrawerScreenState extends State<DrawerScreen> {
         "role": role,
         "email": usp.email ?? sp.email,
       });
-      if (response["status"] == 200) {
+      final status = response["status"];
+      final succeeded = status == 200 ||
+          status == '200' ||
+          response['message']
+                  ?.toString()
+                  .toLowerCase()
+                  .contains('updated successfully') ==
+              true;
+
+      if (succeeded) {
         final sharedPreferences = await SharedPreferences.getInstance();
         await sharedPreferences.setString('role', role);
         usp.setRole(role);
-        sp.saveDataToSharedPreferences();
-        Get.snackbar(
+        showAppSnackbar(
           'Mode switched',
           toEarn ? 'Switched to Earn Mode' : 'Switched to Rent Mode',
-          snackPosition: SnackPosition.BOTTOM,
-          duration: const Duration(seconds: 2),
         );
         if (toEarn) {
-          Get.offAll(() => VendrosHomeScreen());
+          Get.offAll(() => const VendrosHomeScreen());
         } else {
-          Get.offAll(() => MainScreen());
+          Get.offAll(() => const MainScreen());
         }
+      } else {
+        showAppErrorSnackbar(
+          response['message']?.toString() ?? 'Could not switch mode',
+        );
       }
     } catch (error) {
-      print("Error updating role: $error");
+      if (kDebugMode) {
+        print("Error updating role: $error");
+      }
+      showAppErrorSnackbar('Could not switch mode. Please try again.');
     } finally {
       if (mounted) {
         setState(() => _roleSwitchInProgress = false);
@@ -195,13 +184,13 @@ class _DrawerScreenState extends State<DrawerScreen> {
   }
 
   Widget _buildRoleModeSection(UserViewModel usp, double resWidth) {
-    if (usp.role != "1" && !onboardingCompleted) {
+    if (!usp.isEarnMode && !onboardingCompleted) {
       return const StartEarningButton();
     }
     return SizedBox(
       width: resWidth * 0.75,
       child: RoleSwitcherCard(
-        isEarnMode: usp.role == "1",
+        isEarnMode: usp.isEarnMode,
         isLoading: _roleSwitchInProgress,
         onModeChanged: (toEarn) => _switchRole(context, toEarn: toEarn),
       ),
@@ -220,12 +209,256 @@ class _DrawerScreenState extends State<DrawerScreen> {
     Navigator.of(context).pop();
   }
 
+  /// Space below drawer items so Logout/Settings clear the home footer bar.
+  double _drawerBottomSpacing(BuildContext context) {
+    const footerClearance = 48.0;
+    const extraPadding = 8.0;
+    return MediaQuery.paddingOf(context).bottom + footerClearance + extraPadding;
+  }
+
+  Widget _drawerMenuRow({
+    required double resWidth,
+    required double textScaleFactor,
+    required String label,
+    required VoidCallback onTap,
+    String iconAsset = 'assets/images/menu-board.png',
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: resWidth * 0.75,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 5, left: 10),
+          child: Row(
+            children: [
+              Image.asset(
+                iconAsset,
+                color: Colors.black,
+                width: 20,
+                height: 20,
+              ),
+              SizedBox(width: 20),
+              Expanded(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.left,
+                  style: TextStyle(
+                    fontSize: 15 * textScaleFactor,
+                    color: Colors.black,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerSectionTitle(
+    String title,
+    double resWidth,
+    double resHeight,
+    double textScaleFactor,
+  ) {
+    return Container(
+      width: resWidth * 0.7,
+      height: resHeight * 0.059,
+      child: Row(
+        children: [
+          Text(
+            title,
+            textAlign: TextAlign.left,
+            style: TextStyle(
+              fontSize: 15 * textScaleFactor,
+              color: Colors.black,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildSupportFeedbackSection(
+    double resWidth,
+    double resHeight,
+    double textScaleFactor,
+  ) {
+    return [
+      Container(
+        width: resWidth * 0.7,
+        child: Divider(color: Colors.grey.shade300),
+      ),
+      _drawerSectionTitle('Support', resWidth, resHeight, textScaleFactor),
+      SizedBox(height: 15),
+      _drawerMenuRow(
+        resWidth: resWidth,
+        textScaleFactor: textScaleFactor,
+        label: 'Provide Feedback',
+        iconAsset: 'assets/images/message-text.png',
+        onTap: () => Get.to(() => const ProvideFeedbackScreen()),
+      ),
+      SizedBox(height: 15),
+    ];
+  }
+
+  List<Widget> _buildLegalMenuSection(
+    double resWidth,
+    double resHeight,
+    double textScaleFactor, {
+    bool showTopDivider = false,
+  }) {
+    final legalItems = <MapEntry<String, VoidCallback>>[
+      MapEntry('Terms & Conditions', () => Get.to(() => TermsAndCondition())),
+      MapEntry('Privacy Policy', () => Get.to(() => PrivacyPolicy())),
+      MapEntry('Copyright Policy', () => Get.to(CopyrightPolicy())),
+      MapEntry('Rental Agreement', () => Get.to(RentalAgreement())),
+      MapEntry(
+        'Usage Policy & Limitations',
+        () => Get.to(usagePolicyAndLimitations()),
+      ),
+      MapEntry(
+        'Insurance & Indemnifications Policy',
+        () => Get.to(InsuranceAndIndemnification()),
+      ),
+      MapEntry(
+        'Transportation & Installation Policy',
+        () => Get.to(TransportAndInstallationPolicy()),
+      ),
+      MapEntry(
+        'Maintenance & Warranties',
+        () => Get.to(AboutAppScreen()),
+      ),
+      MapEntry('Termination', () => Get.to(Termination())),
+    ];
+
+    return [
+      if (showTopDivider) ...[
+        SizedBox(height: 10),
+        Container(
+          width: resWidth * 0.7,
+          child: Divider(color: Colors.grey.shade300),
+        ),
+      ],
+      _drawerSectionTitle('Legal', resWidth, resHeight, textScaleFactor),
+      SizedBox(height: 15),
+      for (var i = 0; i < legalItems.length; i++) ...[
+        _drawerMenuRow(
+          resWidth: resWidth,
+          textScaleFactor: textScaleFactor,
+          label: legalItems[i].key,
+          onTap: legalItems[i].value,
+        ),
+        if (i < legalItems.length - 1) SizedBox(height: 25),
+      ],
+      SizedBox(height: 15),
+    ];
+  }
+
+  Widget _buildSettingsMenuItem(double resWidth, double textScaleFactor) {
+    return Column(
+      children: [
+        Container(
+          width: resWidth * 0.7,
+          child: Divider(color: Colors.grey.shade300),
+        ),
+        SizedBox(height: 15),
+        _drawerMenuRow(
+          resWidth: resWidth,
+          textScaleFactor: textScaleFactor,
+          label: 'Settings',
+          iconAsset: 'assets/images/setting-2.png',
+          onTap: () {
+            Get.back();
+            widget.onCloseDrawer?.call();
+            Get.to(() => const Settings(showBackButton: true));
+          },
+        ),
+        SizedBox(height: 25),
+      ],
+    );
+  }
+
+  Future<void> _clearSessionAndNavigateToLogin(SignInProvider sp) async {
+    final userPreference = context.read<UserViewModel>();
+    final authViewModel = context.read<AuthViewModel>();
+    final scaffoldState = Scaffold.maybeOf(context);
+    if (scaffoldState?.isDrawerOpen ?? false) {
+      scaffoldState!.closeDrawer();
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+
+    try {
+      final sharedPreferences = await SharedPreferences.getInstance();
+      await sharedPreferences.setBool('time', false);
+      await userPreference.remove();
+      authViewModel.userName = '';
+      await sharedPreferences.clear();
+      try {
+        await sp.userSignOut();
+      } catch (_) {
+        try {
+          await sp.clearStoredData();
+        } catch (_) {}
+      }
+    } catch (_) {
+      // Still navigate to login even if cleanup partially fails.
+    } finally {
+      notiTimer().cancelTimer();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Get.offAll(() => const LoginScreen());
+      });
+    }
+  }
+
+  Future<void> _performFullLogout(SignInProvider sp) async {
+    await _clearSessionAndNavigateToLogin(sp);
+  }
+
+  Future<void> _performGuestLogout(SignInProvider sp) async {
+    await _clearSessionAndNavigateToLogin(sp);
+  }
+
+  Widget _buildLogoutMenuItem(
+    double resWidth,
+    double textScaleFactor,
+    SignInProvider sp, {
+    required bool fullClear,
+  }) {
+    return _drawerMenuRow(
+      resWidth: resWidth,
+      textScaleFactor: textScaleFactor,
+      label: 'Logout',
+      iconAsset: 'assets/images/logout.png',
+      onTap: () async {
+        try {
+          if (fullClear) {
+            await _performFullLogout(sp);
+          } else {
+            await _performGuestLogout(sp);
+          }
+        } catch (e) {
+          if (kDebugMode) {}
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Refresh onboarding status when drawer is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadOnboardingStatus();
     });
+
+    final usp = context.watch<UserViewModel>();
+    final isGuest =
+        usp.isGuestUser ||
+        fullname == 'Guest' ||
+        role == 'Guest';
 
     double res_width = MediaQuery.of(context).size.width;
     double res_height = MediaQuery.of(context).size.height;
@@ -235,7 +468,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body:
-          (fullname != null && fullname == "Guest")
+          isGuest
               ? getGuestDrawer(res_width, res_height, ffem)
               : getNormalDrawer(res_width, res_height, ffem),
     );
@@ -243,7 +476,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
 
   Widget getGuestDrawer(double res_width, double res_height, double ffem) {
     final sp = context.watch<SignInProvider>();
-    final usp = context.watch<UserViewModel>();
     final textScaleFactor = MediaQuery.of(context).textScaler.scale(1.0);
 
     return Container(
@@ -274,7 +506,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       child: Padding(
                         padding: const EdgeInsets.all(4.0),
                         child: Image.asset(
-                          'assets/newpacks/close-circle.png',
+                          'assets/images/close-circle.png',
                           color: Colors.black,
                           width: 30,
                           height: 30,
@@ -294,64 +526,18 @@ class _DrawerScreenState extends State<DrawerScreen> {
                     padding: EdgeInsets.zero,
                     child: Column(
                       children: [
-                        isLoadingImage
-                            ? CircleAvatar(
-                              radius: 40,
-                              backgroundColor: Colors.grey[200],
-                              child: SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.0,
-                                  color: AppColors.primaryColor,
-                                ),
-                              ),
-                            )
-                            : imagesapi != "null" && imagesapi.isNotEmpty
-                            ? CachedNetworkImage(
-                              imageUrl: "${Url}${imagesapi}",
-                              imageBuilder:
-                                  (context, imageProvider) => CircleAvatar(
-                                    radius: 40,
-                                    backgroundImage: imageProvider,
-                                  ),
-                              placeholder:
-                                  (context, url) => CircleAvatar(
-                                    radius: 40,
-                                    backgroundColor: Colors.grey[200],
-                                    child: SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.0,
-                                        color: AppColors.primaryColor,
-                                      ),
-                                    ),
-                                  ),
-                              errorWidget:
-                                  (context, url, error) => CircleAvatar(
-                                    radius: 40,
-                                    backgroundImage: AssetImage(
-                                      "assets/slicing/blankuser.jpeg",
-                                    ),
-                                  ),
-                            )
-                            : CircleAvatar(
-                              radius: 40,
-                              backgroundImage: AssetImage(
-                                "assets/slicing/blankuser.jpeg",
-                              ),
-                            ),
+                        ProfileImage.circularAvatar(
+                          radius: 40,
+                          baseUrl: Url,
+                          imagePath: imagesapi,
+                          isLoading: isLoadingImage,
+                        ),
                         SizedBox(width: 15),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              usp.name == "null"
-                                  ? sp.name.toString() == "null"
-                                      ? "Guest"
-                                      : sp.name.toString()
-                                  : usp.name.toString(),
+                              'Guest',
                               style: TextStyle(
                                 fontSize: 26 * textScaleFactor,
                                 color: Colors.black,
@@ -359,12 +545,10 @@ class _DrawerScreenState extends State<DrawerScreen> {
                               ),
                             ),
                             Text(
-                              usp.email.toString() == "null"
-                                  ? sp.email.toString()
-                                  : sp.email.toString(),
+                              'Browse without signing in',
                               style: TextStyle(
                                 fontSize: 15 * textScaleFactor,
-                                color: Colors.black,
+                                color: Colors.black54,
                               ),
                             ),
                           ],
@@ -377,11 +561,10 @@ class _DrawerScreenState extends State<DrawerScreen> {
               SizedBox(height: res_height * 0.04),
               GestureDetector(
                 onTap: () {
-                  setState(() => shaka = 1);
                   if (bottomctrl.navigationBarIndexValue != 0) {
                     bottomctrl.navBarChange(0);
                   } else {
-                    bottomctrl.navBarChange(2);
+                    Get.back();
                   }
                 },
                 child: Container(
@@ -391,402 +574,46 @@ class _DrawerScreenState extends State<DrawerScreen> {
                     child: Row(
                       children: [
                         Image.asset(
-                          'assets/newpacks/home.png',
+                          'assets/images/home.png',
                           color: Colors.black,
                           width: 20,
                           height: 20,
                         ),
                         SizedBox(width: 20),
-                        Text(
-                          "Home",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
+                        Expanded(
+                          child: Text(
+                            "Home",
+                            style: TextStyle(
+                              fontSize: 15 * textScaleFactor,
+                              color: Colors.black,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
                         ),
                       ],
                     ),
                   ),
                 ),
               ),
-              SizedBox(height: 10),
-              Container(
-                width: res_width * 0.7,
-                child: Divider(color: Colors.grey.shade300),
+              ..._buildLegalMenuSection(
+                res_width,
+                res_height,
+                textScaleFactor,
+                showTopDivider: true,
               ),
-              Container(
-                width: res_width * 0.7,
-                height: res_height * 0.059,
-                child: Row(
-                  children: [
-                    Text(
-                      "Legal",
-                      style: TextStyle(
-                        fontSize: 15 * textScaleFactor,
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 15),
-              GestureDetector(
-                onTap: () {
-                  setState(() => shaka = 10);
-                  Get.to(() => TermsAndCondition());
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/menu-board.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Terms & Conditions",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 25),
-              GestureDetector(
-                onTap: () {
-                  setState(() => shaka = 11);
-                  Get.to(() => PrivacyPolicy());
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/note-text.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Privacy Policy",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              // SizedBox(
-              SizedBox(height: 25),
-              GestureDetector(
-                onTap: () {
-                  setState(() => shaka = 12);
-                  Get.to(CopyrightPolicy());
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/note-text.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Copyright Policy",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 25),
-              GestureDetector(
-                onTap: () {
-                  setState(() => shaka = 13);
-                  Get.to(RentalAgreement());
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/note-text.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Rental Agreement",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 25),
-              GestureDetector(
-                onTap: () {
-                  setState(() => shaka = 14);
-                  Get.to(usagePolicyAndLimitations());
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/menu-board.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Usage Policy & Limitations",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 25),
-              GestureDetector(
-                onTap: () {
-                  setState(() => shaka = 15);
-                  Get.to(InsuranceAndIndemnification());
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/menu-board.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Insurance & Indemnifications Policy",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 25),
-              GestureDetector(
-                onTap: () {
-                  setState(() => shaka = 16);
-                  Get.to(TransportAndInstallationPolicy());
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/menu-board.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Transportation & Installation Policy",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 25),
-              GestureDetector(
-                onTap: () {
-                  setState(() => shaka = 17);
-                  Get.to(AboutAppScreen());
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/menu-board.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Maintenance & Warranties",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 25),
-              GestureDetector(
-                onTap: () {
-                  setState(() => shaka = 18);
-                  Get.to(Termination());
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/menu-board.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Termination",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 15),
               Container(
                 width: res_width * 0.7,
                 child: Divider(color: Colors.grey.shade300),
               ),
               SizedBox(height: 15),
-              GestureDetector(
-                onTap: () async {
-                  SharedPreferences sharedPreferences =
-                      await SharedPreferences.getInstance();
-                  setState(() {
-                    sharedPreferences.setString('token', "");
-                    sharedPreferences.setString('role', "");
-                  });
-                  sharedPreferences.setBool("time", false);
-                  final userPrefernece = Provider.of<UserViewModel>(
-                    context,
-                    listen: false,
-                  );
-                  userPrefernece.remove().then((value) {});
-                  sp
-                      .userSignOut()
-                      .then((value) {
-                        Get.to(() => LoginScreen());
-                      })
-                      .catchError((e) {
-                        if (kDebugMode) {}
-                      });
-                },
-                child: Container(
-                  width: res_width * 0.75,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 5, left: 10),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/newpacks/logout.png',
-                          color: Colors.black,
-                          width: 20,
-                          height: 20,
-                        ),
-                        SizedBox(width: 20),
-                        Text(
-                          "Logout",
-                          style: TextStyle(
-                            fontSize: 15 * textScaleFactor,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              _buildLogoutMenuItem(
+                res_width,
+                textScaleFactor,
+                sp,
+                fullClear: false,
               ),
-              SizedBox(height: res_height * 0.095),
+              SizedBox(height: _drawerBottomSpacing(context)),
             ],
           ),
         ),
@@ -811,7 +638,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
       ),
       child: SingleChildScrollView(
         child:
-            role == "1"
+            usp.isEarnMode
                 ? Padding(
                   padding: const EdgeInsets.only(left: 30.0),
                   child: Column(
@@ -833,7 +660,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
                               child: Padding(
                                 padding: const EdgeInsets.all(4.0),
                                 child: Image.asset(
-                                  'assets/newpacks/close-circle.png',
+                                  'assets/images/close-circle.png',
                                   color: Colors.black,
                                   width: 30,
                                   height: 30,
@@ -848,54 +675,12 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         mainAxisAlignment: MainAxisAlignment.start,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          isLoadingImage
-                              ? CircleAvatar(
-                                radius: 40,
-                                backgroundColor: Colors.grey[200],
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.0,
-                                    color: AppColors.primaryColor,
-                                  ),
-                                ),
-                              )
-                              : imagesapi != "null" && imagesapi.isNotEmpty
-                              ? CachedNetworkImage(
-                                imageUrl: "${Url}${imagesapi}",
-                                imageBuilder:
-                                    (context, imageProvider) => CircleAvatar(
-                                      radius: 40,
-                                      backgroundImage: imageProvider,
-                                    ),
-                                placeholder:
-                                    (context, url) => CircleAvatar(
-                                      radius: 40,
-                                      backgroundColor: Colors.grey[200],
-                                      child: SizedBox(
-                                        width: 24,
-                                        height: 24,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.0,
-                                          color: AppColors.primaryColor,
-                                        ),
-                                      ),
-                                    ),
-                                errorWidget:
-                                    (context, url, error) => CircleAvatar(
-                                      radius: 40,
-                                      backgroundImage: AssetImage(
-                                        "assets/slicing/blankuser.jpeg",
-                                      ),
-                                    ),
-                              )
-                              : CircleAvatar(
-                                radius: 40,
-                                backgroundImage: AssetImage(
-                                  "assets/slicing/blankuser.jpeg",
-                                ),
-                              ),
+                          ProfileImage.circularAvatar(
+                            radius: 40,
+                            baseUrl: Url,
+                            imagePath: imagesapi,
+                            isLoading: isLoadingImage,
+                          ),
                           SizedBox(width: 15),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -913,17 +698,18 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                   maxLines: 1,
                                 ),
                               ),
-                              getText(usp, sp).contains('+')
-                                  ? Container()
-                                  : SizedBox(
+                              Builder(
+                                builder: (_) {
+                                  final email = UserViewModel.displayEmail(
+                                    usp.email,
+                                  );
+                                  if (email == null) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return SizedBox(
                                     width: res_width * 0.55,
                                     child: Text(
-                                      (usp.email.toString() == "null" ||
-                                              usp.email.toString().contains(
-                                                "Phone",
-                                              ))
-                                          ? usp.phoneNumber.toString()
-                                          : usp.email.toString(),
+                                      email,
                                       style: TextStyle(
                                         fontSize: 15 * textScaleFactor,
                                         color: Colors.black,
@@ -931,7 +717,9 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
                                     ),
-                                  ),
+                                  );
+                                },
+                              ),
                             ],
                           ),
                         ],
@@ -941,9 +729,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       const SizedBox(height: 24),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 1;
-                          });
                           if (bottomctrl.navigationBarIndexValue != 0) {
                             bottomctrl.navBarChange(0);
                           } else {
@@ -958,21 +743,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/home.png',
+                                  'assets/images/home.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "Home",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "Home",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -1004,9 +791,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 10),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 2;
-                          });
                           Get.to(() => RenterProfile());
                         },
                         child: Container(
@@ -1016,21 +800,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/frame.png',
+                                  'assets/images/frame.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "Profile",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "Profile",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -1040,9 +826,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 25),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 3;
-                          });
                           _openProviderChat(context);
                         },
                         child: Container(
@@ -1052,21 +835,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/messages.png',
+                                  'assets/images/messages.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "Chat",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "Chat",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -1076,9 +861,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 25),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 4;
-                          });
                           Get.to(const OrderRequestScreen());
                         },
                         child: Container(
@@ -1088,21 +870,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/book.png',
+                                  'assets/images/book.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "My Orders",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "My Orders",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -1112,9 +896,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 25),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 5;
-                          });
                           Get.to(TransactionListScreen());
                         },
                         child: Container(
@@ -1124,21 +905,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/dollar-circle.png',
+                                  'assets/images/dollar-circle.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "My Transactions",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "My Transactions",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -1148,9 +931,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 25),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 6;
-                          });
                           Get.to(ProductReturnScreen());
                         },
                         child: Container(
@@ -1160,21 +940,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/bag-tick.png',
+                                  'assets/images/bag-tick.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "Return Product",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "Return Product",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -1182,512 +964,24 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         ),
                       ),
                       SizedBox(height: 15),
-                      Container(
-                        width: res_width * 0.7,
-                        child: Divider(color: Colors.grey.shade300),
+                      ..._buildSupportFeedbackSection(
+                        res_width,
+                        res_height,
+                        textScaleFactor,
                       ),
-                      Container(
-                        width: res_width * 0.7,
-                        height: res_height * 0.059,
-                        child: Row(
-                          children: [
-                            Text(
-                              "Support",
-                              textAlign: TextAlign.left,
-                              style: TextStyle(
-                                fontSize: 15 * textScaleFactor,
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
+                      ..._buildLegalMenuSection(
+                        res_width,
+                        res_height,
+                        textScaleFactor,
                       ),
-                      SizedBox(height: 15),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 9;
-                          });
-                          Get.to(() => ContactSupport());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/message-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Provide Feedback",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      _buildSettingsMenuItem(res_width, textScaleFactor),
+                      _buildLogoutMenuItem(
+                        res_width,
+                        textScaleFactor,
+                        sp,
+                        fullClear: true,
                       ),
-                      SizedBox(height: 15),
-                      Container(
-                        width: res_width * 0.7,
-                        height: res_height * 0.059,
-                        child: Row(
-                          children: [
-                            Text(
-                              "Legal",
-                              textAlign: TextAlign.left,
-                              style: TextStyle(
-                                fontSize: 15 * textScaleFactor,
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: 15),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 10;
-                          });
-                          Get.to(() => TermsAndCondition());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/menu-board.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Terms & Conditions",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 11;
-                          });
-                          Get.to(() => PrivacyPolicy());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Privacy Policy",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 12;
-                          });
-                          Get.to(CopyrightPolicy());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Copyright Policy",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 13;
-                          });
-                          Get.to(RentalAgreement());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Rental Agreement",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 14;
-                          });
-                          Get.to(usagePolicyAndLimitations());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/menu-board.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Usage Policy & Limitations",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 15;
-                          });
-                          Get.to(InsuranceAndIndemnification());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/menu-board.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Insurance & Indemnifications Policy",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 16;
-                          });
-                          Get.to(TransportAndInstallationPolicy());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/menu-board.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Transportation & Installation Policy",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 17;
-                          });
-                          Get.to(AboutAppScreen());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/menu-board.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Maintenance & Warranties",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 18;
-                          });
-                          Get.to(Termination());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/menu-board.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Termination",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 15),
-                      Container(
-                        width: res_width * 0.7,
-                        child: Divider(color: Colors.grey.shade300),
-                      ),
-                      SizedBox(height: 15),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 19;
-                          });
-                          Get.back();
-                          widget.onCloseDrawer?.call();
-                          Get.to(() => const Settings());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/setting-2.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Settings",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () async {
-                          SharedPreferences sharedPreferences =
-                              await SharedPreferences.getInstance();
-
-                          setState(() {
-                            sharedPreferences.setString('token', "");
-                            sharedPreferences.setString('role', "");
-                          });
-
-                          sharedPreferences.setBool("time", false);
-
-                          final userPrefernece = Provider.of<UserViewModel>(
-                            context,
-                            listen: false,
-                          );
-                          userPrefernece.remove().then((value) {
-                            sharedPreferences.clear();
-                          });
-                          sp
-                              .userSignOut()
-                              .then((value) {
-                                Navigator.pushAndRemoveUntil(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => LoginScreen(),
-                                  ),
-                                  (route) => false,
-                                );
-                                notiTimer().timer?.cancel();
-                              })
-                              .catchError((e) {
-                                if (kDebugMode) {}
-                              });
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/logout.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Logout",
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: res_height * 0.095),
+                      SizedBox(height: _drawerBottomSpacing(context)),
                     ],
                   ),
                 )
@@ -1711,7 +1005,7 @@ class _DrawerScreenState extends State<DrawerScreen> {
                               child: Padding(
                                 padding: const EdgeInsets.all(4.0),
                                 child: Image.asset(
-                                  'assets/newpacks/close-circle.png',
+                                  'assets/images/close-circle.png',
                                   color: Colors.black,
                                   width: 30,
                                   height: 30,
@@ -1726,54 +1020,12 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         mainAxisAlignment: MainAxisAlignment.start,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          isLoadingImage
-                              ? CircleAvatar(
-                                radius: 40,
-                                backgroundColor: Colors.grey[200],
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.0,
-                                    color: AppColors.primaryColor,
-                                  ),
-                                ),
-                              )
-                              : imagesapi != "null" && imagesapi.isNotEmpty
-                              ? CachedNetworkImage(
-                                imageUrl: "${Url}${imagesapi}",
-                                imageBuilder:
-                                    (context, imageProvider) => CircleAvatar(
-                                      radius: 40,
-                                      backgroundImage: imageProvider,
-                                    ),
-                                placeholder:
-                                    (context, url) => CircleAvatar(
-                                      radius: 40,
-                                      backgroundColor: Colors.grey[200],
-                                      child: SizedBox(
-                                        width: 24,
-                                        height: 24,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.0,
-                                          color: AppColors.primaryColor,
-                                        ),
-                                      ),
-                                    ),
-                                errorWidget:
-                                    (context, url, error) => CircleAvatar(
-                                      radius: 40,
-                                      backgroundImage: AssetImage(
-                                        "assets/slicing/blankuser.jpeg",
-                                      ),
-                                    ),
-                              )
-                              : CircleAvatar(
-                                radius: 40,
-                                backgroundImage: AssetImage(
-                                  "assets/slicing/blankuser.jpeg",
-                                ),
-                              ),
+                          ProfileImage.circularAvatar(
+                            radius: 40,
+                            baseUrl: Url,
+                            imagePath: imagesapi,
+                            isLoading: isLoadingImage,
+                          ),
                           SizedBox(width: 15),
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1791,17 +1043,18 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                   maxLines: 1,
                                 ),
                               ),
-                              getText(usp, sp).contains('+')
-                                  ? Container()
-                                  : SizedBox(
+                              Builder(
+                                builder: (_) {
+                                  final email = UserViewModel.displayEmail(
+                                    usp.email,
+                                  );
+                                  if (email == null) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return SizedBox(
                                     width: res_width * 0.55,
                                     child: Text(
-                                      (usp.email.toString() == "null" ||
-                                              usp.email.toString().contains(
-                                                "Phone",
-                                              ))
-                                          ? usp.phoneNumber.toString()
-                                          : usp.email.toString(),
+                                      email,
                                       style: TextStyle(
                                         fontSize: 15 * textScaleFactor,
                                         color: Colors.black,
@@ -1809,7 +1062,9 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 1,
                                     ),
-                                  ),
+                                  );
+                                },
+                              ),
                             ],
                           ),
                         ],
@@ -1819,9 +1074,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       const SizedBox(height: 24),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 1;
-                          });
                           if (bottomctrl.navigationBarIndexValue != 0) {
                             bottomctrl.navBarChange(0);
                           } else {
@@ -1836,18 +1088,20 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/home.png',
+                                  'assets/images/home.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "Home",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "Home",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1860,19 +1114,11 @@ class _DrawerScreenState extends State<DrawerScreen> {
                         width: res_width * 0.7,
                         child: Divider(color: Colors.grey.shade300),
                       ),
-                      // SizedBox(height: 10),
                       Container(
                         width: res_width * 0.7,
                         height: res_height * 0.059,
                         child: Row(
                           children: [
-                            // Icon(
-                            //   Icons.home_outlined,
-                            //   color: Colors.white,
-                            // ),
-                            // SizedBox(
-                            //   width: 20,
-                            // ),
                             Text(
                               "Account",
                               textAlign: TextAlign.left,
@@ -1888,9 +1134,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 10),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 2;
-                          });
                           Get.to(() => MyProfileScreen());
                         },
                         child: Container(
@@ -1900,21 +1143,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/frame.png',
+                                  'assets/images/frame.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "Profile",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "Profile",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -1923,72 +1168,8 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       ),
                       SizedBox(height: 25),
 
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 3;
-                      //       });
-                      //       Get.to(MessagesScreen());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 3
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(Icons.chat, color: Colors.white),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Chat",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.white,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 3;
-                          });
                           _openRenterChat(context);
                         },
                         child: Container(
@@ -1998,21 +1179,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/messages.png',
+                                  'assets/images/messages.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "Chat",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "Chat",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -2022,9 +1205,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 25),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 4;
-                          });
                           Get.to(() => MyOrdersScreen());
                         },
                         child: Container(
@@ -2034,21 +1214,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/book.png',
+                                  'assets/images/book.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "My Orders",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "My Orders",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -2058,9 +1240,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 25),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 5;
-                          });
                           Get.to(() => FavouriteScreen());
                         },
                         child: Container(
@@ -2070,21 +1249,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/heart-edit.png',
+                                  'assets/images/heart-edit.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "My Wishlist",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "My Wishlist",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -2095,9 +1276,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 25),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 6;
-                          });
                           Get.to(() => ReturnProductScreen());
                         },
                         child: Container(
@@ -2107,21 +1285,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/bag-tick.png',
+                                  'assets/images/bag-tick.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "Return Product",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "Return Product",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -2132,9 +1312,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       SizedBox(height: 25),
                       GestureDetector(
                         onTap: () {
-                          setState(() {
-                            shaka = 7;
-                          });
                           Get.to(() => MyTransactionsScreen());
                         },
                         child: Container(
@@ -2144,21 +1321,23 @@ class _DrawerScreenState extends State<DrawerScreen> {
                             child: Row(
                               children: [
                                 Image.asset(
-                                  'assets/newpacks/dollar-circle.png',
+                                  'assets/images/dollar-circle.png',
                                   color: Colors.black,
                                   width: 20,
                                   height: 20,
                                 ),
                                 SizedBox(width: 20),
-                                Text(
-                                  "My Transactions",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
+                                Expanded(
+                                  child: Text(
+                                    "My Transactions",
+                                    textAlign: TextAlign.left,
+                                    style: TextStyle(
+                                      fontSize: 15 * textScaleFactor,
+                                      color: Colors.black,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -2167,1652 +1346,24 @@ class _DrawerScreenState extends State<DrawerScreen> {
                       ),
 
                       SizedBox(height: 15),
-
-                      Container(
-                        width: res_width * 0.7,
-                        child: Divider(color: Colors.grey.shade300),
+                      ..._buildSupportFeedbackSection(
+                        res_width,
+                        res_height,
+                        textScaleFactor,
                       ),
-                      // SizedBox(height: 10),
-                      Container(
-                        width: res_width * 0.7,
-                        height: res_height * 0.059,
-                        child: Row(
-                          children: [
-                            // Icon(
-                            //   Icons.home_outlined,
-                            //   color: Colors.white,
-                            // ),
-                            // SizedBox(
-                            //   width: 20,
-                            // ),
-                            Text(
-                              "Support",
-                              textAlign: TextAlign.left,
-                              style: TextStyle(
-                                fontSize: 15 * textScaleFactor,
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
+                      ..._buildLegalMenuSection(
+                        res_width,
+                        res_height,
+                        textScaleFactor,
                       ),
-                      SizedBox(height: 15),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 9;
-                          });
-                          Get.to(() => ContactSupport());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/message-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Provide Feedback",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      _buildSettingsMenuItem(res_width, textScaleFactor),
+                      _buildLogoutMenuItem(
+                        res_width,
+                        textScaleFactor,
+                        sp,
+                        fullClear: true,
                       ),
-                      SizedBox(height: 15),
-
-                      Container(
-                        width: res_width * 0.7,
-                        height: res_height * 0.059,
-                        child: Row(
-                          children: [
-                            // Icon(
-                            //   Icons.home_outlined,
-                            //   color: Colors.white,
-                            // ),
-                            // SizedBox(
-                            //   width: 20,
-                            // ),
-                            Text(
-                              "Legal",
-                              textAlign: TextAlign.left,
-                              style: TextStyle(
-                                fontSize: 15 * textScaleFactor,
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: 15),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 10;
-                          });
-                          Get.to(() => TermsAndCondition());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/menu-board.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Terms & Conditions",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 11;
-                          });
-                          Get.to(() => PrivacyPolicy());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Privacy Policy",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 12;
-                          });
-                          Get.to(() => CopyrightPolicy());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Copyright Policy",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 13;
-                          });
-                          Get.to(() => RentalAgreement());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Rental Agreement",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 14;
-                          });
-                          Get.to(() => usagePolicyAndLimitations());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Usage Policy & Limitations",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 15;
-                          });
-                          Get.to(() => InsuranceAndIndemnification());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Insurance & Indemnifications",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 16;
-                          });
-                          Get.to(() => TransportAndInstallationPolicy());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Transportation & Installation...",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 17;
-                          });
-                          Get.to(() => AboutAppScreen());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Maintainence & Warranties",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 18;
-                          });
-                          Get.to(() => Termination());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/note-text.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Termination",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 15),
-                      Container(
-                        width: res_width * 0.7,
-                        child: Divider(color: Colors.grey.shade300),
-                      ),
-                      SizedBox(height: 15),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            shaka = 19;
-                          });
-                          Get.back();
-                          widget.onCloseDrawer?.call();
-                          Get.to(() => const Settings());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/setting-2.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Settings",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () async {
-                          SharedPreferences sharedPreferences =
-                              await SharedPreferences.getInstance();
-
-                          setState(() {
-                            sharedPreferences.setString('token', "");
-                            sharedPreferences.setString('role', "");
-                          });
-
-                          sharedPreferences.setBool("time", false);
-
-                          final userPrefernece = Provider.of<UserViewModel>(
-                            context,
-                            listen: false,
-                          );
-                          userPrefernece.remove().then((value) {
-                            sharedPreferences.clear();
-                          });
-                          sp
-                              .userSignOut()
-                              .then((value) {
-                                Navigator.pushAndRemoveUntil(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => LoginScreen(),
-                                  ),
-                                  (route) => false,
-                                );
-                                notiTimer().timer?.cancel();
-                              })
-                              .catchError((e) {
-                                if (kDebugMode) {}
-                              });
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/newpacks/logout.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Text(
-                                  "Logout",
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontSize: 15 * textScaleFactor,
-                                    color: Colors.black,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 150),
-
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 4;
-                      //       });
-                      //       Get.to(MyOrdersScreen());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 4
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.list_alt_rounded,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "My Orders",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.white,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 5;
-                      //       });
-                      //       Get.to(() => FavouriteScreen());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 5
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(Icons.save_as, color: Colors.white),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "My Wishlist",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.white,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 6;
-                      //       });
-                      //       Get.to(ReturnProductScreen());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 6
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.list_alt_rounded,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Return Product",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.white,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 7;
-                      //       });
-                      //       Get.to(() => MyTransactionsScreen());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 7
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.receipt_long,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "My Transactions",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.white,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: role == 1 ? 10 : 0),
-                      // SizedBox(height: 15),
-                      // Container(
-                      //   width: res_width * 0.7,
-                      //   height: res_height * 0.059,
-                      //   decoration: BoxDecoration(
-                      //     color: Colors.transparent,
-                      //     borderRadius: BorderRadius.only(
-                      //       topRight: Radius.circular(20),
-                      //       bottomRight: Radius.circular(20),
-                      //     ),
-                      //   ),
-                      //   child: Container(
-                      //     width: res_width * 0.4,
-                      //     child: Padding(
-                      //       padding: const EdgeInsets.only(left: 20),
-                      //       child: Align(
-                      //         alignment: Alignment.centerLeft,
-                      //         child: Row(
-                      //           children: [
-                      //             Text(
-                      //               "Support",
-                      //               textAlign: TextAlign.left,
-                      //               style: TextStyle(
-                      //                 fontSize: 23 * textScaleFactor,
-                      //                 color: Colors.white,
-                      //                 fontWeight: FontWeight.bold,
-                      //               ),
-                      //             ),
-                      //           ],
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 9;
-                      //       });
-                      //       Get.to(() => ContactSupport());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 9
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.list_alt_rounded,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Provide Feedback",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.white,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // SizedBox(height: 15),
-                      // Container(
-                      //   width: res_width * 0.7,
-                      //   height: res_height * 0.059,
-                      //   decoration: BoxDecoration(
-                      //     color: Colors.transparent,
-                      //     borderRadius: BorderRadius.only(
-                      //       topRight: Radius.circular(20),
-                      //       bottomRight: Radius.circular(20),
-                      //     ),
-                      //   ),
-                      //   child: Container(
-                      //     width: res_width * 0.4,
-                      //     child: Padding(
-                      //       padding: const EdgeInsets.only(left: 20),
-                      //       child: Align(
-                      //         alignment: Alignment.centerLeft,
-                      //         child: Row(
-                      //           children: [
-                      //             Text(
-                      //               "Legal",
-                      //               textAlign: TextAlign.left,
-                      //               style: TextStyle(
-                      //                 fontSize: 23 * textScaleFactor,
-                      //                 color: Colors.white,
-                      //                 fontWeight: FontWeight.bold,
-                      //               ),
-                      //             ),
-                      //           ],
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 10;
-                      //       });
-                      //       Get.to(() => TermsAndCondition());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 10
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.library_books,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Terms & Conditions",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.black,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 5),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 11;
-                      //       });
-                      //       Get.to(() => PrivacyPolicy());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 11
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(Icons.list_alt, color: Colors.white),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Privacy Policy",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.black,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 12;
-                      //       });
-                      //       Get.to(CopyrightPolicy());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 12
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(Icons.list_alt, color: Colors.white),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Copyright Policy",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.black,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 13;
-                      //       });
-                      //       Get.to(RentalAgreement());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 13
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(left: 20),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(Icons.list_alt, color: Colors.white),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Rental Agreement",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.black,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 14;
-                      //       });
-                      //       Get.to(usagePolicyAndLimitations());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 14
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.view_list_outlined,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Usage Policy & Limitations",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.black,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 15;
-                      //       });
-                      //       Get.to(InsuranceAndIndemnification());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 15
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.view_list_outlined,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Insurance & Indemnifications Policy",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.black,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 16;
-                      //       });
-                      //       Get.to(TransportAndInstallationPolicy());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 16
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.view_list_outlined,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Transportation & Installation Policy",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.black,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 17;
-                      //       });
-                      //       Get.to(AboutAppScreen());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 17
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.view_list_outlined,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Maintenance & Warranties",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.black,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () {
-                      //       setState(() {
-                      //         shaka = 18;
-                      //       });
-                      //       Get.to(Termination());
-                      //     },
-                      //     child: Container(
-                      //       width: res_width * 0.7,
-                      //       height: res_height * 0.041,
-                      //       decoration: BoxDecoration(
-                      //         color:
-                      //             shaka == 18
-                      //                 ? Color(0xFF4285F4)
-                      //                 : Colors.transparent,
-                      //         borderRadius: BorderRadius.only(
-                      //           topRight: Radius.circular(20),
-                      //           bottomRight: Radius.circular(20),
-                      //         ),
-                      //       ),
-                      //       child: Container(
-                      //         width: res_width * 0.4,
-                      //         child: Padding(
-                      //           padding: const EdgeInsets.only(
-                      //             left: 20,
-                      //             bottom: 5,
-                      //           ),
-                      //           child: Align(
-                      //             alignment: Alignment.centerLeft,
-                      //             child: Row(
-                      //               children: [
-                      //                 Icon(
-                      //                   Icons.view_list_outlined,
-                      //                   color: Colors.white,
-                      //                 ),
-                      //                 SizedBox(width: 20),
-                      //                 SizedBox(
-                      //                   width: res_width * 0.681,
-                      //                   child: Text(
-                      //                     "Termination",
-                      //                     textAlign: TextAlign.left,
-                      //                     style: TextStyle(
-                      //                       fontSize: 15 * textScaleFactor,
-                      //                       color: Colors.black,
-                      //                     ),
-                      //                     overflow: TextOverflow.ellipsis,
-                      //                     maxLines: 1,
-                      //                   ),
-                      //                 ),
-                      //               ],
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 60),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: Container(
-                      //     decoration: BoxDecoration(
-                      //       border: Border(
-                      //         bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //       ),
-                      //     ),
-                      //     child: GestureDetector(
-                      //       onTap: () {
-                      //         setState(() {
-                      //           shaka = 19;
-                      //         });
-                      //         if (bottomctrl.navigationBarIndexValue != 4) {
-                      //           bottomctrl.navBarChange(4);
-                      //         } else {
-                      //           Get.back();
-                      //         }
-                      //       },
-                      //       child: Container(
-                      //         width: res_width * 0.7,
-                      //         height: res_height * 0.041,
-                      //         decoration: BoxDecoration(
-                      //           color:
-                      //               shaka == 19
-                      //                   ? Color(0xFF4285F4)
-                      //                   : Colors.transparent,
-                      //           borderRadius: BorderRadius.only(
-                      //             topRight: Radius.circular(20),
-                      //             bottomRight: Radius.circular(20),
-                      //           ),
-                      //         ),
-                      //         child: GestureDetector(
-                      //           child: Container(
-                      //             width: res_width * 0.4,
-                      //             child: Padding(
-                      //               padding: const EdgeInsets.only(
-                      //                 left: 20,
-                      //                 bottom: 5,
-                      //               ),
-                      //               child: Align(
-                      //                 alignment: Alignment.centerLeft,
-                      //                 child: Row(
-                      //                   children: [
-                      //                     Icon(
-                      //                       Icons.settings,
-                      //                       color: Colors.white,
-                      //                     ),
-                      //                     SizedBox(width: 20),
-                      //                     SizedBox(
-                      //                       width: res_width * 0.681,
-                      //                       child: Text(
-                      //                         "Settings",
-                      //                         textAlign: TextAlign.left,
-                      //                         style: TextStyle(
-                      //                           fontSize: 15 * textScaleFactor,
-                      //                           color: Colors.black,
-                      //                         ),
-                      //                         overflow: TextOverflow.ellipsis,
-                      //                         maxLines: 1,
-                      //                       ),
-                      //                     ),
-                      //                   ],
-                      //                 ),
-                      //               ),
-                      //             ),
-                      //           ),
-                      //         ),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: 10),
-                      // Container(
-                      //   width: res_width * 0.9,
-                      //   decoration: BoxDecoration(
-                      //     border: Border(
-                      //       bottom: BorderSide(color: Colors.white, width: 0.2),
-                      //     ),
-                      //   ),
-                      //   child: GestureDetector(
-                      //     onTap: () async {
-                      //       SharedPreferences sharedPreferences =
-                      //           await SharedPreferences.getInstance();
-                      //
-                      //       setState(() {
-                      //         sharedPreferences.setString('token', "");
-                      //         sharedPreferences.setString('role', "");
-                      //       });
-                      //
-                      //       sharedPreferences.setBool("time", false);
-                      //
-                      //       final userPrefernece = Provider.of<UserViewModel>(
-                      //         context,
-                      //         listen: false,
-                      //       );
-                      //       userPrefernece.remove().then((value) {
-                      //         sharedPreferences.clear();
-                      //       });
-                      //       sp
-                      //           .userSignOut()
-                      //           .then((value) {
-                      //             Navigator.pushAndRemoveUntil(
-                      //               context,
-                      //               MaterialPageRoute(
-                      //                 builder: (context) => LoginScreen(),
-                      //               ),
-                      //               (route) => false,
-                      //             );
-                      //             notiTimer().timer?.cancel();
-                      //           })
-                      //           .catchError((e) {
-                      //             if (kDebugMode) {}
-                      //           });
-                      //     },
-                      //     child: Padding(
-                      //       padding: const EdgeInsets.only(left: 20, bottom: 7),
-                      //       child: Row(
-                      //         children: [
-                      //           Icon(Icons.login_outlined, color: Colors.white),
-                      //           SizedBox(width: 20),
-                      //           SizedBox(
-                      //             width: res_width * 0.681,
-                      //             child: Text(
-                      //               "Logout",
-                      //               style: TextStyle(
-                      //                 fontSize: 15 * textScaleFactor,
-                      //                 color: Colors.black,
-                      //               ),
-                      //               overflow: TextOverflow.ellipsis,
-                      //               maxLines: 1,
-                      //             ),
-                      //           ),
-                      //         ],
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
-                      // SizedBox(height: res_height * 0.095),
+                      SizedBox(height: _drawerBottomSpacing(context)),
                     ],
                   ),
                 ),
@@ -3820,26 +1371,22 @@ class _DrawerScreenState extends State<DrawerScreen> {
     );
   }
 
-  var imagesapi = "null";
-  var nameapi = "null";
-  var emailapi = "user email";
-  var datalength;
+  var imagesapi = "";
   bool isLoadingImage = true;
 
   Future getProductsApi(id) async {
     try {
       final response = await http.get(
         Uri.parse('${Url}/UserProfileGetById/${id}'),
+        headers: await ApiHeaders.json(),
       );
       var data = jsonDecode(response.body.toString());
-      datalength = data["data"].length;
-
       if (data["data"].length != 0) {
         if (mounted) {
           setState(() {
-            imagesapi = data["data"][0]["image"].toString();
-            nameapi = data["data"][0]["name"].toString();
-            emailapi = data["data"][0]["email"].toString();
+            imagesapi = ProfileImage.sanitizePath(
+              data["data"][0]["profile_image"]?.toString(),
+            );
             isLoadingImage = false;
           });
         }
@@ -3873,19 +1420,20 @@ class _DrawerScreenState extends State<DrawerScreen> {
 }
 
 String getText(usp, sp) {
-  if (usp.name == "null") {
-    if (sp.name.toString() == "null") {
-      return "user name";
-    } else if (sp.phoneNumber.toString() != "null") {
-      return sp.phoneNumber.toString();
-    } else {
-      return sp.name.toString();
-    }
-  } else {
-    if (usp.name.toString() == "") {
-      return usp.phoneNumber.toString();
-    } else {
-      return usp.name.toString();
-    }
+  if (usp.isGuestUser) {
+    return 'Guest';
   }
+  final uspName = usp.name?.toString().trim() ?? '';
+  if (uspName.isNotEmpty && uspName != 'null') {
+    return uspName;
+  }
+  final spName = sp.name?.toString().trim() ?? '';
+  if (spName.isNotEmpty && spName != 'null') {
+    return spName;
+  }
+  final phone = sp.phoneNumber?.toString().trim() ?? '';
+  if (phone.isNotEmpty && phone != 'null') {
+    return phone;
+  }
+  return '';
 }

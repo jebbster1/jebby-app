@@ -10,14 +10,13 @@ import 'package:jebby/view_model/apiServices.dart';
 import 'package:jebby/view_model/user_view_model.dart';
 import 'package:jebby/Views/screens/shared/Chat.dart';
 import 'package:jebby/Views/screens/profile/userprofile.dart';
-import 'package:jebby/Views/screens/vendors/negotiationScreeen.dart';
+import 'package:jebby/utils/profile_image.dart';
 import 'package:jebby/Views/screens/vendors/MyOrders.dart';
-import 'package:jebby/Views/screens/vendors/negotiationRequest.dart';
 import 'package:jebby/res/color.dart';
 import 'package:provider/provider.dart';
 
 /// Notifications for both renter and vendor flows. Same API; vendor sees
-/// order notifications and vendor-specific negotiation / order screens.
+/// order notifications and vendor-specific order screens.
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({Key? key, this.isVendor = false})
       : super(key: key);
@@ -46,7 +45,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     await usp.getUpdatedUser();
     await sp.getDataFromSharedPreferences();
-    profileImage = (usp.image ?? sp.imageUrl ?? '').toString();
+    profileImage = ProfileImage.sanitizePath(
+      (usp.profileImage ?? sp.imageUrl ?? '').toString(),
+    );
 
     final usermodel.UserModel user = await usp.getUser();
     sourceId = user.id.toString();
@@ -155,34 +156,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       Get.to(() => MessagesScreen());
     } else if (name == "order" && widget.isVendor) {
       Get.to(() => OrderRequestScreen());
-    } else if (name == "negotiation") {
-      if (widget.isVendor) {
-        Get.to(
-          () => NegotiationRequest(
-            price: data.price.toString(),
-            status: data.status,
-            productId: data.productId.toString(),
-            negoId: data.negoId,
-          ),
-        );
-      } else {
-        Get.to(
-          () => NegotiationScreen(
-            prodId: data.productId,
-            status: data.status,
-            price: data.price,
-            negoId: data.negoId.toString(),
-            userId: data.userId.toString(),
-          ),
-        );
-      }
     }
   }
 
   Widget _notificationTile(Data data, {required bool showDivider}) {
     final name = (data.name ?? '').toString();
     final desc = (data.description ?? '').toString();
-    final seen = data.seen_one.toString();
+    final seen = data.seen.toString();
     final date = data.createdAt?.toString() ?? '';
     final formattedDate = DateFormat('hh:mm a')
         .format(DateTime.tryParse(date) ?? DateTime.now());
@@ -268,11 +248,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _buildAppBarProfileAction() {
-    final image = (profileImage ?? '').trim();
-    final bool hasImage = image.isNotEmpty && image.toLowerCase() != 'null';
-    final String imageUrl =
-        image.startsWith('http') ? image : '${AppUrl.baseUrlM}$image';
-
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Material(
@@ -282,17 +257,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           customBorder: const CircleBorder(),
           child: Padding(
             padding: const EdgeInsets.all(8),
-            child: CircleAvatar(
+            child: ProfileImage.circularAvatar(
               radius: 18,
-              backgroundColor: Colors.grey.shade200,
-              backgroundImage: hasImage ? NetworkImage(imageUrl) : null,
-              child: hasImage
-                  ? null
-                  : const Icon(
-                      Icons.person_outline,
-                      color: Colors.black54,
-                      size: 22,
-                    ),
+              baseUrl: AppUrl.baseUrlM,
+              imagePath: profileImage,
             ),
           ),
         ),

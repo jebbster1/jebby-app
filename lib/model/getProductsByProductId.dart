@@ -35,28 +35,19 @@ class Data {
   String? name;
   int? price;
   String? specifications;
-  String? serviceAgreements;
+  String? description;
   String? createdAt;
   String? updatedAt;
-  int? negotiation;
-  int? isMessage;
   String? stars;
   String? length;
   int? productId;
-  int? per;
-  int? subcatId;
-  int? fp;
-  int? lbd;
-  String? pastart;
-  String? paend;
-  String? dastart;
-  String? daend;
-  int? price1;
-  int? discount;
+  int? isDelivery;
+  String? availableFrom;
+  String? availableTo;
+  String? address;
   var latitude;
   var longitude;
   int? security_deposit;
-  int? price2;
   List<Images>? images;
   String? delivery_charges;
 
@@ -68,28 +59,19 @@ class Data {
     this.name,
     this.price,
     this.specifications,
-    this.serviceAgreements,
+    this.description,
     this.createdAt,
     this.updatedAt,
-    this.negotiation,
-    this.isMessage,
     this.stars,
     this.length,
     this.productId,
-    this.per,
-    this.subcatId,
-    this.fp,
-    this.lbd,
-    this.pastart,
-    this.paend,
-    this.dastart,
-    this.daend,
-    this.price1,
-    this.discount,
+    this.isDelivery,
+    this.availableFrom,
+    this.availableTo,
+    this.address,
     this.latitude,
     this.longitude,
     this.security_deposit,
-    this.price2,
     this.images,
     this.delivery_charges,
   });
@@ -102,35 +84,36 @@ class Data {
     name = json['name'];
     price = json['price'];
     specifications = json['specifications'];
-    serviceAgreements = json['service_agreements'];
+    description = json['description'];
     createdAt = json['created_at'];
     updatedAt = json['updated_at'];
-    negotiation = json['negotiation'];
-    isMessage = json['isMessage'];
     stars = json['stars'];
     length = json['length'];
     productId = json['product_id'];
-    per = json['per'];
-    subcatId = json['subcat_id'];
-    fp = json['fp'];
-    lbd = json['lbd'];
-    pastart = json['pastart'];
-    paend = json['paend'];
-    dastart = json['dastart'];
-    daend = json['daend'];
-    price1 = json['price1'];
-    discount = json['discount'];
+    isDelivery = json['is_delivery'];
+    availableFrom = json['available_from'];
+    availableTo = json['available_to'];
+    address = json['address']?.toString();
     latitude = json['latitude'];
     longitude = json['longitude'];
     security_deposit = json['security_deposit'];
-    price2 = json['price2'];
     if (json['images'] != null) {
       images = <Images>[];
-      json['images'].forEach((v) {
-        images!.add(new Images.fromJson(v));
-      });
+      final rawImages = json['images'];
+      if (rawImages is List) {
+        for (var i = 0; i < rawImages.length; i++) {
+          final v = rawImages[i];
+          if (v is String) {
+            images!.add(Images(id: i, path: v));
+          } else if (v is Map<String, dynamic>) {
+            images!.add(Images.fromJson(v));
+          } else if (v is Map) {
+            images!.add(Images.fromJson(Map<String, dynamic>.from(v)));
+          }
+        }
+      }
     }
-    delivery_charges = json['delivery_charges'];
+    delivery_charges = json['delivery_charges']?.toString();
   }
 
   Map<String, dynamic> toJson() {
@@ -142,28 +125,19 @@ class Data {
     data['name'] = this.name;
     data['price'] = this.price;
     data['specifications'] = this.specifications;
-    data['service_agreements'] = this.serviceAgreements;
+    data['description'] = this.description;
     data['created_at'] = this.createdAt;
     data['updated_at'] = this.updatedAt;
-    data['negotiation'] = this.negotiation;
-    data['isMessage'] = this.isMessage;
     data['stars'] = this.stars;
     data['length'] = this.length;
     data['product_id'] = this.productId;
-    data['per'] = this.per;
-    data['subcat_id'] = this.subcatId;
-    data['fp'] = this.fp;
-    data['lbd'] = this.lbd;
-    data['pastart'] = this.pastart;
-    data['paend'] = this.paend;
-    data['dastart'] = this.dastart;
-    data['daend'] = this.daend;
-    data['price1'] = this.price1;
-    data['discount'] = this.discount;
+    data['is_delivery'] = this.isDelivery;
+    data['available_from'] = this.availableFrom;
+    data['available_to'] = this.availableTo;
+    data['address'] = this.address;
     data['latitude'] = this.latitude;
     data['longitude'] = this.longitude;
     data['security_deposit'] = this.security_deposit;
-    data['price2'] = this.price2;
     if (this.images != null) {
       data['images'] = this.images!.map((v) => v.toJson()).toList();
     }
@@ -185,8 +159,8 @@ class Images {
     id = json['id'];
     productId = json['product_id'];
     path = json['path'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    createdAt = json['created_at']?.toString();
+    updatedAt = json['updated_at']?.toString();
   }
 
   Map<String, dynamic> toJson() {

@@ -8,6 +8,7 @@ import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
 import 'package:jebby/Views/screens/vendors/ProductDetails.dart';
 import 'package:jebby/Views/screens/vendors/AddProduct.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/Views/screens/vendors/vendorhome.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/res/color.dart';
@@ -19,6 +20,7 @@ import '../../../view_model/apiServices.dart';
 import '../../../view_model/user_view_model.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
 
 class ProductListScreen extends StatefulWidget {
   final side;
@@ -71,6 +73,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
   Future getProductsApi(id) async {
     final response = await http.get(
       Uri.parse('${Url}/UserProfileGetById/${id}'),
+      headers: await ApiHeaders.json(),
     );
     var data = jsonDecode(response.body.toString());
     profile = data['data'];
@@ -245,8 +248,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   onTap: (){
                     if (profile.length == 0) {
 
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Complete Your Profile")));
+                      showAppErrorSnackbar('Complete your profile', title: 'Required');
 
                     } else {
                       Get.to(()=>AddProductScreen());
@@ -291,7 +293,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   icon: Padding(
                     padding: const EdgeInsets.all(2),
                     child: Image.asset(
-                      'assets/slicing/searchnew.png',
+                      'assets/images/searchnew.png',
                       width: 20,
                       height: 20,
                       fit: BoxFit.contain,

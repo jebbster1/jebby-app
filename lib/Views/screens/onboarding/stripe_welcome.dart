@@ -106,21 +106,21 @@ class _StripeWelcomeScreenState extends State<StripeWelcomeScreen> {
             children: const [
               Expanded(
                 child: _StripePartnerChip(
-                  logoAsset: 'assets/onboarding/stripe_partners/amazon.svg',
+                  logoAsset: 'assets/images/amazon.svg',
                   logoColor: Color(0xFF232F3E),
                 ),
               ),
               SizedBox(width: 8),
               Expanded(
                 child: _StripePartnerChip(
-                  logoAsset: 'assets/onboarding/stripe_partners/airbnb.svg',
+                  logoAsset: 'assets/images/airbnb.svg',
                   logoColor: Color(0xFFFF5A5F),
                 ),
               ),
               SizedBox(width: 8),
               Expanded(
                 child: _StripePartnerChip(
-                  logoAsset: 'assets/onboarding/stripe_partners/uber.svg',
+                  logoAsset: 'assets/images/uber.svg',
                   logoColor: Color(0xFF09091A),
                 ),
               ),

@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:http/http.dart' as http;
 import 'package:jebby/res/app_url.dart';
+import 'package:jebby/utils/device_platform.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AnalyticsService {
@@ -36,6 +37,7 @@ class AnalyticsService {
       final body = <String, dynamic>{
         'event_name': eventName,
         'session_id': sessionId,
+        'device': clientPlatform(),
         if (userId != null && userId.isNotEmpty)
           'user_id': int.tryParse(userId) ?? userId,
         if (role != null && role.isNotEmpty)

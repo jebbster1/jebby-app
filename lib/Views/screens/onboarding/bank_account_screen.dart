@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/screens/onboarding/onboarding_form_widgets.dart';
 import 'package:jebby/Views/screens/onboarding/onboarding_scaffold.dart';
 import 'package:jebby/Views/screens/onboarding/review_submit_screen.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/view_model/onboarding_controller.dart';
 
 class BankAccountScreen extends StatefulWidget {
@@ -52,16 +53,8 @@ class _BankAccountScreenState extends State<BankAccountScreen> {
     super.dispose();
   }
 
-  void _showError(String message) {
-    Get.snackbar(
-      'Bank account',
-      message,
-      snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.black87,
-      colorText: Colors.white,
-      margin: const EdgeInsets.all(16),
-    );
-  }
+  void _showError(String message) =>
+      showAppErrorSnackbar(message, title: 'Required');
 
   Future<void> _continue() async {
     final holder = _holderController.text.trim();

@@ -203,8 +203,7 @@ class _SearchDataState extends State<SearchData> {
               imageUrl,
               item.specifications,
               item.userId,
-              item.serviceAgreements,
-              item.isMessage,
+              item.description,
               item.delivery_charges,
             ),
           );

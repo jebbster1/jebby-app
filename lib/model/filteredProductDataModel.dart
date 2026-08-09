@@ -2,14 +2,12 @@ class GetFilteredProductDataModel {
   String? message;
   List<Data>? data;
   List<Images>? images;
-  List<Relate>? relate;
   List<Reviews>? reviews;
 
   GetFilteredProductDataModel({
     this.message,
     this.data,
     this.images,
-    this.relate,
     this.reviews,
   });
 
@@ -25,12 +23,6 @@ class GetFilteredProductDataModel {
       images = <Images>[];
       json['images'].forEach((v) {
         images!.add(new Images.fromJson(v));
-      });
-    }
-    if (json['relate'] != null) {
-      relate = <Relate>[];
-      json['relate'].forEach((v) {
-        relate!.add(new Relate.fromJson(v));
       });
     }
     if (json['reviews'] != null) {
@@ -50,9 +42,6 @@ class GetFilteredProductDataModel {
     if (this.images != null) {
       data['images'] = this.images!.map((v) => v.toJson()).toList();
     }
-    if (this.relate != null) {
-      data['relate'] = this.relate!.map((v) => v.toJson()).toList();
-    }
     if (this.reviews != null) {
       data['reviews'] = this.reviews!.map((v) => v.toJson()).toList();
     }
@@ -68,11 +57,9 @@ class Data {
   String? name;
   int? price;
   String? specifications;
-  String? serviceAgreements;
+  String? description;
   String? createdAt;
   String? updatedAt;
-  int? negotiation;
-  int? isMessage;
   String? stars;
   String? length;
   String? image;
@@ -86,11 +73,9 @@ class Data {
     this.name,
     this.price,
     this.specifications,
-    this.serviceAgreements,
+    this.description,
     this.createdAt,
     this.updatedAt,
-    this.negotiation,
-    this.isMessage,
     this.stars,
     this.length,
     this.image,
@@ -105,11 +90,9 @@ class Data {
     name = json['name'];
     price = json['price'];
     specifications = json['specifications'];
-    serviceAgreements = json['service_agreements'];
+    description = json['description'];
     createdAt = json['created_at'];
     updatedAt = json['updated_at'];
-    negotiation = json['negotiation'];
-    isMessage = json['isMessage'];
     stars = json['stars'];
     length = json['length'];
     image = json['image'];
@@ -125,11 +108,9 @@ class Data {
     data['name'] = this.name;
     data['price'] = this.price;
     data['specifications'] = this.specifications;
-    data['service_agreements'] = this.serviceAgreements;
+    data['description'] = this.description;
     data['created_at'] = this.createdAt;
     data['updated_at'] = this.updatedAt;
-    data['negotiation'] = this.negotiation;
-    data['isMessage'] = this.isMessage;
     data['stars'] = this.stars;
     data['length'] = this.length;
     data['image'] = this.image;
@@ -160,40 +141,6 @@ class Images {
     data['id'] = this.id;
     data['product_id'] = this.productId;
     data['path'] = this.path;
-    data['created_at'] = this.createdAt;
-    data['updated_at'] = this.updatedAt;
-    return data;
-  }
-}
-
-class Relate {
-  int? id;
-  int? productId;
-  int? relatedProductId;
-  String? createdAt;
-  String? updatedAt;
-
-  Relate({
-    this.id,
-    this.productId,
-    this.relatedProductId,
-    this.createdAt,
-    this.updatedAt,
-  });
-
-  Relate.fromJson(Map<String, dynamic> json) {
-    id = json['id'];
-    productId = json['product_id'];
-    relatedProductId = json['related_product_id'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
-  }
-
-  Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = new Map<String, dynamic>();
-    data['id'] = this.id;
-    data['product_id'] = this.productId;
-    data['related_product_id'] = this.relatedProductId;
     data['created_at'] = this.createdAt;
     data['updated_at'] = this.updatedAt;
     return data;

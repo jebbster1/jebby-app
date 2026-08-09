@@ -189,7 +189,7 @@ class _ChatState extends State<Chat> {
                 (row.name ?? '').toString().trim().isEmpty
                     ? 'Chat'
                     : (row.name ?? '').toString().trim();
-            _targetImage = (row.image ?? '').toString();
+            _targetImage = (row.profileImage ?? '').toString();
           });
         }
       },
@@ -237,7 +237,7 @@ class _ChatState extends State<Chat> {
 
   String _avatarUrl(String rel) {
     final t = rel.trim();
-    if (t.isEmpty || t.toLowerCase() == 'null') return '';
+    if (t.isEmpty) return '';
     if (t.startsWith('http')) return t;
     return '${AppUrl.baseUrlM}$t';
   }
@@ -452,7 +452,7 @@ class _ProductInquiryCard extends StatelessWidget {
 
   String _resolveImageUrl() {
     final rel = product.image.trim();
-    if (rel.isEmpty || rel.toLowerCase() == 'null') return '';
+    if (rel.isEmpty) return '';
     if (rel.startsWith('http')) return rel;
     return '${AppUrl.baseUrlM}$rel';
   }
@@ -468,7 +468,6 @@ class _ProductInquiryCard extends StatelessWidget {
         '',
         product.vendorUserId,
         '',
-        0,
         0,
       ),
     );

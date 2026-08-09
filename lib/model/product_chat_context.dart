@@ -33,7 +33,7 @@ class ProductChatContext {
 
   String get imageUrl {
     final t = image.trim();
-    if (t.isEmpty || t.toLowerCase() == 'null') return '';
+    if (t.isEmpty) return '';
     if (t.startsWith('http')) return t;
     return t;
   }

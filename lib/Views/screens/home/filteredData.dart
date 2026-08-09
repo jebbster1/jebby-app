@@ -137,8 +137,7 @@ class _FilteredDataState extends State<FilteredData> {
                           AppUrl.baseUrlM + data.image.toString(),
                           data.specifications,
                           data.userId,
-                          data.serviceAgreements,
-                          data.isMessage,
+                          data.description,
                           data.delivery_charges,
                         ),
                       );

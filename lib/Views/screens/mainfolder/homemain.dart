@@ -12,6 +12,7 @@ import 'package:jebby/Views/controller/bottomcontroller.dart';
 import 'package:jebby/Views/screens/home/FeaturedCategories.dart';
 import 'package:jebby/Views/screens/home/home.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
 
 import 'package:jebby/Views/screens/shared/Setting.dart';
 import 'package:jebby/Views/screens/vendors/MyProducts.dart';
@@ -19,6 +20,7 @@ import 'package:jebby/Views/screens/shared/Notification.dart';
 import 'package:jebby/Views/screens/vendors/vendorhome.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/view_model/apiServices.dart';
+import 'package:jebby/utils/profile_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../Services/provider/sign_in_provider.dart';
@@ -36,13 +38,10 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   final bottomctrl = Get.put(BottomController());
   num activeIndex = 0;
-  String? _persistedRole;
 
-  // String userName = "";
 
   var screens = [
     HomeScreen(),
-    // FavouriteScreen(),
     FilterScreeen(),
     FeaturedCategoriesScreen(),
     NotificationsScreen(),
@@ -53,13 +52,10 @@ class _MainScreenState extends State<MainScreen> {
   var screensVendor = [
     VendrosHomeScreen(),
     ProductListScreen(side: true),
-    // Settings(),
     ProductListScreen(side: true),
     NotificationsScreen(isVendor: true),
     Settings(),
     MessagesScreen(),
-    // OrderRequestScreen(),
-    // RenterProfile(),
   ];
 
   Future<UserModel> getUserDate() => UserViewModel().getUser();
@@ -67,7 +63,6 @@ class _MainScreenState extends State<MainScreen> {
 
   Future getData() async {
     final sp = context.read<SignInProvider>();
-    //  final sps = context.watch<SignInProvider>();
     sp.getDataFromSharedPreferences();
   }
 
@@ -76,65 +71,40 @@ class _MainScreenState extends State<MainScreen> {
   void check() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
 
-    prefs.getBool('time') == false
-        ? notiTimer().timer?.cancel()
-        : notiTimer().timer =
-            prefs.getBool('time') == false
-                ? notiTimer().timer?.cancel()
-                : new Timer.periodic(Duration(seconds: 5), (_) {
-                  if (token == null ||
-                      token == "" ||
-                      role == "" ||
-                      role == null ||
-                      prefs.getBool('time') != true) {
-                    cancelTimer();
-                  } else {
-                    prefs.getBool('notifiction') == true
-                        ? getNotifications()
-                        : prefs.getBool('notifiction') == null
-                        ? getNotifications()
-                        : null;
-                  }
-                });
+    if (prefs.getBool('time') == false) {
+      cancelTimer();
+      return;
+    }
+
+    cancelTimer();
+    notiTimer().timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (token == null ||
+          token == "" ||
+          role == "" ||
+          role == null ||
+          prefs.getBool('time') != true) {
+        cancelTimer();
+      } else {
+        prefs.getBool('notifiction') == true
+            ? getNotifications()
+            : prefs.getBool('notifiction') == null
+            ? getNotifications()
+            : null;
+      }
+    });
   }
 
   cancelTimer() {
-    notiTimer().timer?.cancel();
-    notiTimer().timer = null;
+    notiTimer().cancelTimer();
   }
 
   @override
   void initState() {
-    //  noti == true ? timer =  new Timer.periodic(Duration(seconds: 5), (_) => getNotifications()) : null;
-    // timer =  new Timer.periodic(Duration(seconds: 5), (_) => getNotifications());
     func();
     getData();
     profileData(context);
-    _loadPersistedRole();
-    // getUserName();
-    // check();
     super.initState();
   }
-
-  Future<void> _loadPersistedRole() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _persistedRole = prefs.getString('role');
-    });
-  }
-
-  // void getUserName()  async {
-  //   if(userName == "Guest" || userName.isEmpty) {
-  //     SharedPreferences sharedPreferences =
-  //         await SharedPreferences.getInstance();
-  //     String _name = sharedPreferences.getString('fullname') ?? "";
-  //     setState(() {
-  //
-  //       userName = _name;
-  //     });
-  //   }
-  // }
 
   @override
   void dispose() {
@@ -155,7 +125,9 @@ class _MainScreenState extends State<MainScreen> {
   String? role;
 
   void profileData(BuildContext context) async {
-    getUserDate()
+    final usp = context.read<UserViewModel>();
+    usp
+        .getUser()
         .then((value) async {
           token = value.token.toString();
           id = value.id.toString();
@@ -163,7 +135,6 @@ class _MainScreenState extends State<MainScreen> {
           fullname = value.name.toString();
           email = value.email.toString();
           role = value.role.toString();
-          // getNotifications();
         })
         .onError((error, stackTrace) {});
   }
@@ -208,22 +179,11 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final userName = context.watch<AuthViewModel>();
     final userViewModel = context.watch<UserViewModel>();
-    final activeRole =
-        (userViewModel.role != null && userViewModel.role!.isNotEmpty)
-            ? userViewModel.role
-            : role;
-    final resolvedRole =
-        (activeRole != null && activeRole.isNotEmpty)
-            ? activeRole
-            : _persistedRole;
-    final isProviderMode = resolvedRole == "1";
+    final isProviderMode = userViewModel.isEarnMode;
 
-    // State variable for delayed condition check
 
     Future.delayed(const Duration(seconds: 1), () {});
 
-    //  sp.role=="null" ? role="1":role="1";
-    //role= sp.role.toString();
     return Scaffold(
       extendBody: true,
       body: GetBuilder<BottomController>(
@@ -237,9 +197,9 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar:
           isProviderMode
               ? null
-              : (resolvedRole != "Guest"
-                    ? bottomForUser(userName)
-                    : bottomForGuest()),
+              : (userViewModel.isGuestUser
+                    ? bottomForGuest()
+                    : bottomForUser(userName)),
     );
   }
 
@@ -287,7 +247,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget _footerSearchSlot() {
     return _footerNavTap(
       icon: Image.asset(
-        'assets/newpacks/searchnew.png',
+        'assets/images/searchnew_tab.png',
         width: _footerNavIconSize,
         height: _footerNavIconSize,
         color: _footerIconColor(activeIndex == 1),
@@ -361,7 +321,7 @@ class _MainScreenState extends State<MainScreen> {
                     Expanded(
                       child: _footerNavTap(
                         icon: Image.asset(
-                          'assets/newpacks/home_footer.png',
+                          'assets/images/home_footer.png',
                           width: _footerNavIconSize,
                           height: _footerNavIconSize,
                           color: _footerIconColor(activeIndex == 0),
@@ -379,7 +339,7 @@ class _MainScreenState extends State<MainScreen> {
                     Expanded(
                       child: _footerNavTap(
                         icon: Image.asset(
-                          'assets/newpacks/chaticon.png',
+                          'assets/images/chaticon.png',
                           width: _footerNavIconSize,
                           height: _footerNavIconSize,
                           color: _footerIconColor(activeIndex == 5),
@@ -395,7 +355,7 @@ class _MainScreenState extends State<MainScreen> {
                     Expanded(
                       child: _footerNavTap(
                         icon: Image.asset(
-                          'assets/newpacks/settingicon.png',
+                          'assets/images/settingicon.png',
                           width: _footerNavIconSize,
                           height: _footerNavIconSize,
                           color: _footerIconColor(activeIndex == 4),
@@ -500,16 +460,16 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  var imagesapi = "null";
-  var nameapi = "null";
-  var locationapi = "null";
-  var emailapi = "null";
+  var imagesapi = "";
+  var nameapi = "";
+  var locationapi = "";
+  var emailapi = "";
   String Url = dotenv.env['baseUrlM'] ?? 'No url found';
 
-  ////////
   Future getProductsApi(String ids) async {
     final response = await http.get(
       Uri.parse('${Url}/UserProfileGetById/${ids}'),
+      headers: await ApiHeaders.json(),
     );
     var data = jsonDecode(response.body.toString());
 
@@ -517,9 +477,10 @@ class _MainScreenState extends State<MainScreen> {
 
     if (data["data"].length != 0 && mounted) {
       setState(() {
-        imagesapi = data["data"][0]["image"].toString();
+        imagesapi = ProfileImage.sanitizePath(
+          data["data"][0]["profile_image"]?.toString(),
+        );
         nameapi = data["data"][0]["name"].toString();
-        //_nameController.text=data["data"][0]["name"].toString();
         emailapi = data["data"][0]["email"].toString();
         locationapi = data["data"][0]["address"].toString();
       });
@@ -538,8 +499,10 @@ class _MainScreenState extends State<MainScreen> {
             data["data"][0]["email"].toString(),
           );
           updatePrefrences.setString(
-            'image',
-            data["data"][0]["image"].toString(),
+            'profileImage',
+            ProfileImage.sanitizePath(
+              data["data"][0]["profile_image"]?.toString(),
+            ),
           );
           updatePrefrences.setString(
             'address',
@@ -554,8 +517,8 @@ class _MainScreenState extends State<MainScreen> {
             data["data"][0]["longitude"].toString(),
           );
           updatePrefrences.setString(
-            'number',
-            data["data"][0]["number"].toString(),
+            'phoneNumber',
+            data["data"][0]['phone_number'].toString(),
           );
         });
       }
@@ -566,9 +529,11 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  /////////////////////////////////
   Future getCategoryList() async {
-    final response = await http.get(Uri.parse(AppUrl.categoryGetUrl));
+    final response = await http.get(
+      Uri.parse(AppUrl.categoryGetUrl),
+      headers: await ApiHeaders.json(),
+    );
     var data = jsonDecode(response.body.toString());
 
     if (response.statusCode == 200) {

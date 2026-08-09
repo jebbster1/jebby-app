@@ -14,13 +14,11 @@ import 'package:jebby/model/user_model.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/view_model/user_view_model.dart';
 import 'package:provider/provider.dart';
-import 'package:lottie/lottie.dart';
 
 import 'package:rounded_loading_button_plus/rounded_loading_button.dart';
 
 import '../../../Services/provider/internet_provider.dart';
 import '../../../utils/show_snackbar.dart';
-import '../../../utils/utils.dart';
 import '../../../view_model/auth_view_model.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -35,8 +33,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final GlobalKey _scaffoldKey = GlobalKey<ScaffoldState>();
   final RoundedLoadingButtonController googleController =
       RoundedLoadingButtonController();
-  final RoundedLoadingButtonController phoneController =
-      RoundedLoadingButtonController();
   final RoundedLoadingButtonController facebookController =
       RoundedLoadingButtonController();
   final RoundedLoadingButtonController AppleController =
@@ -44,7 +40,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   TextEditingController _emailController = TextEditingController();
   TextEditingController _passwordController = TextEditingController();
-  TextEditingController _phoneController = TextEditingController();
   int _value = 0;
 
   bool obscure = true;
@@ -53,7 +48,6 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _phoneController.dispose();
 
     super.dispose();
   }
@@ -103,7 +97,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 height: topImageHeight,
                 alignment: Alignment.center,
                 child: Image.asset(
-                  'assets/lottie/welcomeloginimage.png',
+                  'assets/images/welcomeloginimage.png',
                   width: res_width * 0.95,
                   height: topImageHeight - 8,
                   fit: BoxFit.contain,
@@ -184,7 +178,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 horizontal: 16,
                                 vertical: isCompact ? 12 : 16,
                               ),
-                              //  prefixIcon: Icon(Icons.email, color: darkBlue),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(15.0),
                               ),
@@ -254,7 +247,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
 
-                              //  prefixIcon: Icon(Icons.lock, color: darkBlue),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(15.0),
                               ),
@@ -326,20 +318,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             }
                             if (_emailController.text.isEmpty ||
                                 !_emailController.text.contains("@")) {
-                              Utils.flushBarErrorMessage(
-                                'Please enter email',
-                                context,
-                              );
+                              showAppErrorSnackbar('Please enter email', title: 'Required');
                             } else if (_passwordController.text.isEmpty) {
-                              Utils.flushBarErrorMessage(
-                                'Please enter password',
-                                context,
-                              );
+                              showAppErrorSnackbar('Please enter password', title: 'Required');
                             } else if (_passwordController.text.length < 6) {
-                              Utils.flushBarErrorMessage(
-                                'Please enter 6 digit password',
-                                context,
-                              );
+                              showAppErrorSnackbar('Please enter 6 digit password', title: 'Required');
                             } else {
                               Map data = {
                                 'email': _emailController.text.toString(),
@@ -412,60 +395,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ],
                     ),
-                    // Container(
-                    //   width: res_width * 0.9,
-                    //   child: Row(
-                    //     children: [
-                    //       Expanded(
-                    //         child: Divider(color: Colors.black, thickness: 1),
-                    //       ),
-                    //       Padding(
-                    //         padding: const EdgeInsets.all(8.0),
-                    //         child: Text('OR'),
-                    //       ),
-                    //       Expanded(
-                    //         child: Divider(color: Colors.black, thickness: 1),
-                    //       ),
-                    //       SizedBox(height: res_height * 0.07),
-                    //       SizedBox(height: res_height * 0.07),
-                    //     ],
-                    //   ),
-                    // ),
                     SizedBox(height: res_height * spacing3),
-                    // Row(
-                    //   mainAxisAlignment: MainAxisAlignment.center,
-                    //   children: [
-                    //     Radio(
-                    //         activeColor: Colors.black,
-                    //         value: 0,
-                    //         groupValue: _value,
-                    //         onChanged: (value) {
-                    //           setState(() {
-                    //             _value = int.parse(value.toString());
-                    //           }); //selected value
-                    //         }),
-                    //     Text(
-                    //       "User",
-                    //       style: TextStyle(fontSize: 15, color: Colors.black, fontFamily: "Inter, Regular"),
-                    //     ),
-                    //     SizedBox(
-                    //       width: 20,
-                    //     ),
-                    //     Radio(
-                    //         value: 1,
-                    //         activeColor: Colors.black,
-                    //         groupValue: _value,
-                    //         onChanged: (value) {
-                    //           setState(() {
-                    //             _value = int.parse(value.toString());
-                    //           }); //selected value
-                    //         }),
-                    //     Text(
-                    //       "Vender",
-                    //       style: TextStyle(fontSize: 15, color: Colors.black, fontFamily: "Inter, Regular"),
-                    //     ),
-                    //   ],
-                    // ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -483,7 +413,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: Colors.white,
                             child: Center(
                               child: Image.asset(
-                                'assets/slicing/google.png',
+                                'assets/images/google.png',
                                 width: 36,
                                 height: 36,
                                 fit: BoxFit.contain,
@@ -506,7 +436,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: Colors.white,
                             child: Center(
                               child: Image.asset(
-                                'assets/slicing/fb.png',
+                                'assets/images/fb.png',
                                 width: 36,
                                 height: 36,
                                 fit: BoxFit.contain,
@@ -528,30 +458,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             elevation: 0,
                             child: InkWell(
                               onTap: () {
-                                getUserDate()
-                                    .then((value) async {
-                                      if (value.role.toString() == 'null' ||
-                                          value.role.toString() == '') {
-                                        int uniqueNumber =
-                                            generateUniqueNumber();
-                                        Map data = {
-                                          "full_name": "Guest",
-                                          "email":
-                                              "Guest${uniqueNumber.toString()}@gmail.com",
-                                          "source": "Guest",
-                                          "role": "0",
-                                        };
-                                        authViewMode.signUpApiWithGuest(
-                                          data,
-                                          context,
-                                        );
-                                      } else {
-                                        Get.offAll(() => MainScreen());
-                                      }
-                                    })
-                                    .onError((error, stackTrace) {
-                                      if (kDebugMode) {}
-                                    });
+                                authViewMode.loginAsGuest(context);
                               },
                               borderRadius: BorderRadius.circular(_socialButtonRadius),
                               child: Center(
@@ -563,41 +470,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                     SizedBox(height: res_height * spacing3),
-                    //     ? Container(
-                    //         height: res_width * 0.116,
-                    //         child: ElevatedButton.icon(
-                    //           onPressed: () {
-                    //             showPhoneNumberDialog(context, _phoneController, res_width);
-                    //           },
-                    //           label: Icon(
-                    //             Icons.phone,
-                    //             size: 28,
-                    //             color: darkBlue,
-                    //           ),
-                    //         ))
-                    //     : SizedBox.shrink(),
-                    // RoundedLoadingButton(
-                    //   onPressed: () => {
-                    //     // Get.dialog(
-                    //     //   PhoneNumberModal(),
-                    //     //   barrierDismissible: false, // Prevent dismissing by tapping outside
-                    //     // )
-                    //     showPhoneNumberDialog(context, _phoneController, res_width)
-                    //     // handlePhoneSignIn(_value)
-                    //   },
-                    //   controller: phoneController,
-                    //   successColor: Colors.red,
-                    //   width: 75,
-                    //   elevation: 0,
-                    //   borderRadius: 25,
-                    //   valueColor: darkBlue,
-                    //   color: Colors.transparent,
-                    //   child: Icon(
-                    //     Icons.phone,
-                    //     size: 28,
-                    //     color: darkBlue,
-                    //   ),
-                    // ),
                     SizedBox(height: res_height * spacing4),
                     SizedBox(height: MediaQuery.of(context).padding.bottom),
                     ],
@@ -612,137 +484,28 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // handling google sigin in
   Future handleGoogleSignIn(value) async {
-    //value=_value;
     final sp = context.read<SignInProvider>();
     final ip = context.read<InternetProvider>();
     await ip.checkInternetConnection();
 
     if (ip.hasInternet == false) {
-      showSnackBar(context, "Check your Internet connection");
+      showAppErrorSnackbar("Check your Internet connection");
       googleController.reset();
-    } else {
-      try {
-        await sp.signInWithGoogle(value, context);
-        if (sp.hasError == true) {
-          showSnackBar(context, sp.errorCode.toString());
-          googleController.reset();
-          return;
-        }
+      return;
+    }
 
-        // checking whether user exists or not
-        final exists = await sp.checkUserExists();
-        if (exists) {
-          // user exists
-          await sp.getUserDataFromFirestore(sp.uid);
-          await sp.saveDataToSharedPreferences();
-          await sp.setSignIn();
-          googleController.success();
-          handleAfterSignIn();
-        } else {
-          // user does not exist
-          await sp.saveDataToFirestore();
-          await sp.saveDataToSharedPreferences();
-          await sp.setSignIn();
-          googleController.success();
-          handleAfterSignIn();
-        }
-      } catch (e) {
-        showSnackBar(context, e.toString());
-        googleController.reset();
+    try {
+      await sp.signInWithGoogle(value, context);
+      googleController.reset();
+      if (sp.hasError == true) {
+        showAppErrorSnackbar(sp.errorCode.toString());
       }
+    } catch (e) {
+      showAppErrorSnackbar(e.toString());
+      googleController.reset();
     }
   }
-
-  Future handlePhoneSignIn(value) async {
-    //value=_value;
-    final sp = context.read<SignInProvider>();
-    final ip = context.read<InternetProvider>();
-    await ip.checkInternetConnection();
-
-    if (ip.hasInternet == false) {
-      showSnackBar(context, "Check your Internet connection");
-      phoneController.reset();
-    } else {
-      await sp.signInWithPhone(value, context).then((value) {
-        if (sp.hasError == true) {
-          showSnackBar(context, sp.errorCode.toString());
-          phoneController.reset();
-        } else {
-          // checking whether user exists or not
-          sp.checkUserExists().then((value) async {
-            if (value == true) {
-              // user exists
-              await sp
-                  .getUserDataFromFirestore(sp.uid)
-                  .then(
-                    (value) => sp.saveDataToSharedPreferences().then(
-                      (value) => sp.setSignIn().then((value) {
-                        phoneController.success();
-                        // handleAfterSignIn();
-                      }),
-                    ),
-                  );
-            } else {
-              // user does not exist
-              sp.saveDataToFirestore().then(
-                (value) => sp.saveDataToSharedPreferences().then(
-                  (value) => sp.setSignIn().then((value) {
-                    phoneController.success();
-                    // handleAfterSignIn();
-                  }),
-                ),
-              );
-            }
-          });
-        }
-      });
-    }
-  }
-
-  // handling facebookauth
-
-  // Future handleFacebookAuth(value) async {
-  //   final sp = context.read<SignInProvider>();
-  //   final ip = context.read<InternetProvider>();
-  //   await ip.checkInternetConnection();
-
-  //   if (ip.hasInternet == false) {
-  //     showSnackBar(
-  //       context,
-  //       "Check your Internet connection",
-  //     );
-  //     facebookController.reset();
-  //   } else {
-  //     await sp.signInWithFacebook(value, context).then((value) {
-  //       if (sp.hasError == true) {
-  //         showSnackBar(
-  //           context,
-  //           sp.errorCode.toString(),
-  //         );
-  //         facebookController.reset();
-  //       } else {
-  //         // checking whether user exists or not
-  //         sp.checkUserExists().then((value) async {
-  //           if (value == true) {
-  //             // user exists
-  //             await sp.getUserDataFromFirestore(sp.uid).then((value) => sp.saveDataToSharedPreferences().then((value) => sp.setSignIn().then((value) {
-  //                   facebookController.success();
-  //                   handleAfterSignIn();
-  //                 })));
-  //           } else {
-  //             // user does not exist
-  //             sp.saveDataToFirestore().then((value) => sp.saveDataToSharedPreferences().then((value) => sp.setSignIn().then((value) {
-  //                   facebookController.success();
-  //                   handleAfterSignIn();
-  //                 })));
-  //           }
-  //         });
-  //       }
-  //     });
-  //   }
-  // }
 
   Future handleFacebookAuth(value) async {
     final sp = context.read<SignInProvider>();
@@ -750,7 +513,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await ip.checkInternetConnection();
 
     if (ip.hasInternet == false) {
-      showSnackBar(context, "Check your Internet connection");
+      showAppErrorSnackbar("Check your Internet connection");
       facebookController.reset();
     } else {
       await sp
@@ -758,27 +521,9 @@ class _LoginScreenState extends State<LoginScreen> {
           .then((value) {
             facebookController.reset();
             if (sp.hasError == true) {
-              showSnackBar(context, sp.errorCode.toString());
+              showAppErrorSnackbar(sp.errorCode.toString());
               facebookController.reset();
             }
-            // else {
-            //   // checking whether user exists or not
-            //   sp.checkUserExists().then((value) async {
-            //     if (value == true) {
-            //       // user exists
-            //       await sp.getUserDataFromFirestore(sp.uid).then((value) => sp.saveDataToSharedPreferences().then((value) => sp.setSignIn().then((value) {
-            //             facebookController.success();
-            //             handleAfterSignIn();
-            //           })));
-            //     } else {
-            //       // user does not exist
-            //       sp.saveDataToFirestore().then((value) => sp.saveDataToSharedPreferences().then((value) => sp.setSignIn().then((value) {
-            //             facebookController.success();
-            //             handleAfterSignIn();
-            //           })));
-            //     }
-            //   });
-            // }
           })
           .catchError((error) {
             print(error.toString());
@@ -792,67 +537,42 @@ class _LoginScreenState extends State<LoginScreen> {
     final ip = context.read<InternetProvider>();
     await ip.checkInternetConnection();
 
-    // if (ip.hasInternet == false) {
-    //   showSnackBar(
-    //     context,
-    //     "Check your Internet connection",
-    //   );
-    //   AppleController.reset();
-    // } else {
+    if (ip.hasInternet == false) {
+      showAppErrorSnackbar("Check your Internet connection");
+      AppleController.reset();
+      return;
+    }
+
     await sp
         .signInWithApple(value, context)
         .then((value) {
           AppleController.reset();
           if (sp.hasError == true) {
-            showSnackBar(context, sp.errorCode.toString());
+            showAppErrorSnackbar(sp.errorCode.toString());
             AppleController.reset();
           }
-          // else {
-          //   // checking whether user exists or not
-          //   sp.checkUserExists().then((value) async {
-          //     if (value == true) {
-          //       // user exists
-          //       await sp.getUserDataFromFirestore(sp.uid).then((value) => sp.saveDataToSharedPreferences().then((value) => sp.setSignIn().then((value) {
-          //             facebookController.success();
-          //             handleAfterSignIn();
-          //           })));
-          //     } else {
-          //       // user does not exist
-          //       sp.saveDataToFirestore().then((value) => sp.saveDataToSharedPreferences().then((value) => sp.setSignIn().then((value) {
-          //             facebookController.success();
-          //             handleAfterSignIn();
-          //           })));
-          //     }
-          //   });
-          // }
         })
         .catchError((error) {
           print(error.toString());
           AppleController.reset();
         });
-    ;
-    // }
   }
 
   Random random = Random();
 
   int generateUniqueNumber() {
-    // Generate a random number between 0 and 999999
     int randomNumber = random.nextInt(1000000);
 
     // Get the current timestamp in milliseconds
     int timestamp = DateTime.now().millisecondsSinceEpoch;
 
-    // Combine the random number and timestamp to create a unique number
     int uniqueNumber = int.parse('$randomNumber$timestamp');
 
     return uniqueNumber;
   }
 
-  // handle after signin
   handleAfterSignIn() {
     Future.delayed(const Duration(milliseconds: 1000)).then((value) {
-      // log(value.toString());
       Get.offAll(() => MainScreen());
     });
   }
@@ -878,7 +598,7 @@ class _LoginScreenState extends State<LoginScreen> {
           color: Colors.white,
           child: Center(
             child: Image.asset(
-              'assets/slicing/aple.png',
+              'assets/images/aple.png',
               width: 36,
               height: 36,
               fit: BoxFit.contain,
@@ -889,144 +609,4 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     return SizedBox(width: _socialButtonSize, height: _socialButtonSize);
   }
-}
-
-void showPhoneNumberDialog(
-  BuildContext context,
-  TextEditingController _phoneController,
-  res_width,
-) {
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(15.0),
-        ),
-        child: Container(
-          padding: EdgeInsets.all(20),
-          width: MediaQuery.of(context).size.width * 0.8,
-          height: MediaQuery.of(context).size.height * 0.55,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                children: [
-                  Lottie.asset(
-                    'assets/lottie/phone.json',
-                    width: res_width * 0.9,
-                    height: 150,
-                    // fit: BoxFit.fill,
-                  ),
-                  SizedBox(height: 30),
-                  TextField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    style: GoogleFonts.inter(
-                      color: darkBlue,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    decoration: InputDecoration(
-                      prefixIcon: Icon(Icons.phone, color: darkBlue),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15.0),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: darkBlue, width: 1),
-                        borderRadius: BorderRadius.all(Radius.circular(15)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: darkBlue, width: 1),
-                        borderRadius: BorderRadius.all(Radius.circular(15)),
-                      ),
-                      filled: true,
-                      hintStyle: GoogleFonts.inter(
-                        color: darkBlue,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      hintText: 'Enter Phone Number',
-                      fillColor: lightBlue,
-                    ),
-                    onChanged: (value) {
-                      // Handle phone number input
-                    },
-                  ),
-                  SizedBox(height: 15),
-                  Container(
-                    margin: EdgeInsets.only(left: 10),
-                    child: Text(
-                      '* Phone number must be entered with country code +1 --- --- ----',
-                      style: GoogleFonts.inter(
-                        color: Colors.grey,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      _phoneController.clear();
-                    },
-                    child: Text(
-                      'Cancel',
-                      style: GoogleFonts.inter(
-                        color: darkBlue,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 10),
-                  ElevatedButton(
-                    onPressed: () async {
-                      // Handle continue button press
-                      String phoneNumber = _phoneController.text;
-                      if (phoneNumber.isNotEmpty) {
-                        final sp = context.read<SignInProvider>();
-                        final ip = context.read<InternetProvider>();
-                        await ip.checkInternetConnection();
-
-                        if (ip.hasInternet == false) {
-                          showSnackBar(
-                            context,
-                            "Check your Internet connection",
-                          );
-                        } else {
-                          await sp.signInWithPhone(phoneNumber, context);
-                        }
-                      } else {
-                        Get.showSnackbar(
-                          GetSnackBar(
-                            title: 'Error',
-                            message: 'Please enter a phone number',
-                            duration: Duration(seconds: 2),
-                            backgroundColor: Colors.red,
-                            snackPosition: SnackPosition.TOP,
-                          ),
-                        );
-                      }
-                    },
-                    child: Text(
-                      'Continue',
-                      style: GoogleFonts.inter(
-                        color: darkBlue,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
 }

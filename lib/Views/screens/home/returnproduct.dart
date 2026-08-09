@@ -6,9 +6,11 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
 import 'package:intl/intl.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/res/color.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/view_model/getTax_modal.dart';
 
 class ReturnProductScreen extends StatefulWidget {
@@ -60,7 +62,7 @@ class _ReturnProductScreenState extends State<ReturnProductScreen> {
 
   String _imageUrl(dynamic path) {
     final p = path?.toString().trim() ?? '';
-    if (p.isEmpty || p == 'null') return '';
+    if (p.isEmpty) return '';
     if (p.toLowerCase().startsWith('http')) return p;
     final base = AppUrl.baseUrlM;
     if (base.endsWith('/')) return base + (p.startsWith('/') ? p.substring(1) : p);
@@ -88,7 +90,7 @@ class _ReturnProductScreenState extends State<ReturnProductScreen> {
     try {
       final response = await http.post(
         Uri.parse(seenMessageUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: await ApiHeaders.json(),
         body: json.encode(data),
       );
       final responseBody = jsonDecode(response.body);
@@ -96,18 +98,11 @@ class _ReturnProductScreenState extends State<ReturnProductScreen> {
       if (!mounted) return;
 
       if (responseBody['message'].toString() == 'product has been returned') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Product has been returned', style: GoogleFonts.inter())),
-        );
+        showAppSuccessSnackbar('Product has been returned.');
         await _loadData();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              responseBody['message']?.toString() ?? 'Something went wrong',
-              style: GoogleFonts.inter(),
-            ),
-          ),
+        showAppErrorSnackbar(
+          responseBody['message']?.toString() ?? 'Something went wrong',
         );
         setState(() {
           isLoading = false;
@@ -118,13 +113,8 @@ class _ReturnProductScreenState extends State<ReturnProductScreen> {
         setState(() {
           isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Something went wrong. Please check your internet connection.',
-              style: GoogleFonts.inter(),
-            ),
-          ),
+        showAppErrorSnackbar(
+          'Something went wrong. Please check your internet connection.',
         );
       }
     }

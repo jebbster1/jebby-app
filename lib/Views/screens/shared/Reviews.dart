@@ -1,10 +1,10 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import 'package:jebby/res/app_url.dart';
+import 'package:jebby/utils/profile_image.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/view_model/apiServices.dart';
 
@@ -321,55 +321,11 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
     return (count / total).clamp(0.0, 1.0);
   }
 
-  /// Same URL rules as other screens (e.g. product detail, messages).
-  String? _reviewerImageUrl(String? raw) {
-    final s = (raw ?? '').trim();
-    if (s.isEmpty || s.toLowerCase() == 'null') return null;
-    if (s.startsWith('http')) return s;
-    return AppUrl.baseUrlM + s;
-  }
-
   Widget _reviewerAvatar(String? imagePath) {
-    const double size = 46;
-    const radius = size / 2;
-    final url = _reviewerImageUrl(imagePath);
-    if (url == null) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: Colors.grey.shade300,
-        backgroundImage:
-            const AssetImage('assets/slicing/blankuser.jpeg') as ImageProvider,
-      );
-    }
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: Colors.grey.shade200,
-      child: ClipOval(
-        child: CachedNetworkImage(
-          imageUrl: url,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          placeholder: (context, u) => Container(
-            width: size,
-            height: size,
-            color: Colors.grey.shade200,
-            child: const Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryColor),
-              ),
-            ),
-          ),
-          errorWidget: (context, u, e) => Image.asset(
-            'assets/slicing/blankuser.jpeg',
-            width: size,
-            height: size,
-            fit: BoxFit.cover,
-          ),
-        ),
-      ),
+    return ProfileImage.circularAvatar(
+      radius: 23,
+      baseUrl: AppUrl.baseUrlM,
+      imagePath: ProfileImage.sanitizePath(imagePath),
     );
   }
 

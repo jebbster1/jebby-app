@@ -1,17 +1,18 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Services/provider/sign_in_provider.dart';
-import 'package:jebby/Views/helper/colors.dart';
 import 'package:jebby/Views/screens/home/Checkout.dart';
 import 'package:jebby/Views/screens/profile/userprofile.dart';
+import 'package:jebby/Views/widgets/address_autocomplete_field.dart';
+import 'package:jebby/utils/google_places_address.dart';
+import 'package:jebby/utils/profile_image.dart';
 import 'package:jebby/view_model/getTax_modal.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,10 +20,9 @@ import 'package:uuid/uuid.dart';
 import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
 import '../../../view_model/apiServices.dart';
-import 'package:http/http.dart' as http;
 
 import '../../../view_model/user_view_model.dart';
-// import 'package:flutter_stripe/flutter_stripe.dart';
+import '../../../utils/show_snackbar.dart';
 
 class RentnowScreen extends StatefulWidget {
   final String vendorName;
@@ -31,14 +31,17 @@ class RentnowScreen extends StatefulWidget {
   final String vendorImage;
   final dynamic vendorID;
   final dynamic productID;
-  final dynamic pastart;
-  final dynamic paend;
+  final dynamic availableFrom;
+  final dynamic availableTo;
   final dynamic price;
   final dynamic vendorAccountId;
-  final dynamic vendorPayPalEmail;
   final dynamic route;
   final dynamic delivery_charges;
   final dynamic security_deposit;
+  final int isDelivery;
+  final String productAddress;
+  final String productLat;
+  final String productLng;
 
   RentnowScreen(
     this.vendorName,
@@ -47,14 +50,17 @@ class RentnowScreen extends StatefulWidget {
     this.vendorImage,
     this.vendorID,
     this.productID,
-    this.pastart,
-    this.paend,
+    this.availableFrom,
+    this.availableTo,
     this.price,
     this.vendorAccountId,
-    this.vendorPayPalEmail,
     this.route,
     this.delivery_charges,
     this.security_deposit,
+    this.isDelivery,
+    this.productAddress,
+    this.productLat,
+    this.productLng,
   );
 
   @override
@@ -65,7 +71,6 @@ class _RentnowScreenState extends State<RentnowScreen> {
   static const Color _accent = Color(0xFFF6AE02);
   static const Color _starInactive = Color(0xFFC6C8CF);
   static const Color _pageBg = Color(0xFFF3F3F5);
-  // static const Color _labelGrey = Color(0xFF72747A);
   static const Color _bodyGrey = Color(0xFF6D6D75);
   static const Color _titleDark = Color(0xFF1B1B1F);
 
@@ -88,69 +93,47 @@ class _RentnowScreenState extends State<RentnowScreen> {
 
   var _locationController = TextEditingController();
   var _CurrentAddressController = TextEditingController();
+  ParsedUsAddress? _resolvedAddress;
   var Latitiude = "";
   var Longitude = "";
   var uuid = new Uuid();
   var vuid = new Uuid();
-  List<dynamic> _placeList1 = [];
-  String _sessionToken = '1234567890';
 
   var myFormat = DateFormat('dd, MMM/yyyy');
   var myFormat1 = DateFormat('dd, MMM/yyyy');
   var myPillFormat = DateFormat('MM/dd/yyyy');
   final DateFormat _rangeTitleFormat = DateFormat('MMM d');
 
-  _onChanged() {
-    getSuggestion(_locationController.text);
+  void _clearResolvedAddress() {
+    setState(() {
+      _resolvedAddress = const ParsedUsAddress();
+      Latitiude = "";
+      Longitude = "";
+    });
   }
 
-  _onChanged2() {
-    getSuggestion1(_CurrentAddressController.text);
-  }
-
-  void getSuggestion(String input) async {
-    String kPLACES_API_KEY =
-        dotenv.env['kPLACES_API_KEY'] ?? 'No secret key found';
-
-    try {
-      String baseURL =
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json';
-      String request =
-          '$baseURL?input=$input&key=$kPLACES_API_KEY&sessiontoken=$_sessionToken';
-      var response = await http.get(Uri.parse(request));
-      // log('mydata');
-      // log(response.body.toString());
-      if (response.statusCode == 200) {
-        setState(() {});
+  Future<void> _applySelectedAddress(ParsedUsAddress address) async {
+    final display = address.displayLine;
+    setState(() {
+      _resolvedAddress = address;
+      _CurrentAddressController.text = display;
+      _locationController.text = display;
+      if (address.hasCoordinates) {
+        Latitiude = address.latitude!.toString();
+        Longitude = address.longitude!.toString();
       } else {
-        throw Exception('Failed to load predictions');
+        Latitiude = "";
+        Longitude = "";
       }
-    } catch (e) {
-      // toastMessage('success');
-    }
-  }
+    });
 
-  void getSuggestion1(String input) async {
-    String kPLACES_API_KEY =
-        dotenv.env['kPLACES_API_KEY'] ?? 'No secret key found';
-
-    try {
-      String baseURL =
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json';
-      String request =
-          '$baseURL?input=$input&key=$kPLACES_API_KEY&sessiontoken=$_sessionToken';
-      var response = await http.get(Uri.parse(request));
-      // log('mydata');
-      // log(response.body.toString());
-      if (response.statusCode == 200) {
-        setState(() {
-          _placeList1 = json.decode(response.body)['predictions'];
-        });
-      } else {
-        throw Exception('Failed to load predictions');
-      }
-    } catch (e) {
-      // toastMessage('success');
+    if (address.hasCoordinates) {
+      await _getZipCodeFromCoordinates(
+        address.latitude!,
+        address.longitude!,
+      );
+    } else if (address.hasPostalCode) {
+      setState(() => zipCode = address.postalCode);
     }
   }
 
@@ -190,35 +173,94 @@ class _RentnowScreenState extends State<RentnowScreen> {
   void pre() async {
     SharedPreferences Prefrences = await SharedPreferences.getInstance();
 
-    _CurrentAddressController.text =
-        Prefrences.getString('address').toString() == "null"
-            ? ""
-            : Prefrences.getString('address').toString();
-    _locationController.text =
-        Prefrences.getString('address').toString() == "null"
-            ? ""
-            : Prefrences.getString('address').toString();
     nameController.text = Prefrences.getString('fullname').toString();
     emailController.text = Prefrences.getString('email').toString();
-    Longitude = Prefrences.getString('longitude').toString();
-    Latitiude = Prefrences.getString('latitude').toString();
-    _getZipCodeFromCoordinates(
-      double.parse(Latitiude),
-      double.parse(Longitude),
-    );
+
+    if (widget.isDelivery == 1) {
+      final storedAddress = Prefrences.getString('address');
+      final addressText =
+          storedAddress == null ? '' : storedAddress;
+      _CurrentAddressController.text = addressText;
+      _locationController.text = addressText;
+      Longitude = Prefrences.getString('longitude').toString();
+      Latitiude = Prefrences.getString('latitude').toString();
+
+      if (addressText.isNotEmpty) {
+        _resolvedAddress = ParsedUsAddress(
+          formattedAddress: addressText,
+          latitude: double.tryParse(Latitiude),
+          longitude: double.tryParse(Longitude),
+        );
+      }
+
+      final lat = double.tryParse(Latitiude);
+      final lng = double.tryParse(Longitude);
+      if (lat != null && lng != null) {
+        await _getZipCodeFromCoordinates(lat, lng);
+      }
+    } else {
+      _locationController.text = widget.productAddress;
+      _CurrentAddressController.text = widget.productAddress;
+      Latitiude = widget.productLat;
+      Longitude = widget.productLng;
+    }
   }
 
+  String _pickupLocationLabel() {
+    final address = widget.productAddress.trim();
+    if (address.isNotEmpty) return address;
+    final lat = double.tryParse(widget.productLat);
+    final lng = double.tryParse(widget.productLng);
+    if (lat != null && lng != null && (lat != 0 || lng != 0)) {
+      return 'Lat ${lat.toStringAsFixed(4)}, Lng ${lng.toStringAsFixed(4)}';
+    }
+    return 'Location unavailable';
+  }
+
+  String _checkoutLocation() {
+    if (widget.isDelivery == 1) {
+      return _CurrentAddressController.text.toString();
+    }
+    return widget.productAddress.trim().isNotEmpty
+        ? widget.productAddress.trim()
+        : _pickupLocationLabel();
+  }
+
+  String _checkoutLat() {
+    if (widget.isDelivery == 1) {
+      return Latitiude.toString();
+    }
+    return widget.productLat.isNotEmpty ? widget.productLat : '0';
+  }
+
+  String _checkoutLng() {
+    if (widget.isDelivery == 1) {
+      return Longitude.toString();
+    }
+    return widget.productLng.isNotEmpty ? widget.productLng : '0';
+  }
+
+  bool _hasRequiredLocation() {
+    if (widget.isDelivery == 1) {
+      return _resolvedAddress?.hasResolvedMapLocation == true;
+    }
+    return widget.productAddress.trim().isNotEmpty ||
+        (double.tryParse(widget.productLat) ?? 0) != 0 ||
+        (double.tryParse(widget.productLng) ?? 0) != 0;
+  }
+
+  @override
   void initState() {
+    super.initState();
     _loadData();
     getData();
     profileData(context);
     selectedDate =
-        DateTime.now(); //DateTime.parse(widget.pastart).isBefore(DateTime.now()) ? DateTime.now() : DateTime.parse(widget.pastart);
+        DateTime.now(); //DateTime.parse(widget.availableFrom).isBefore(DateTime.now()) ? DateTime.now() : DateTime.parse(widget.availableFrom);
     selectedDate1 = DateTime.now().add(
       Duration(days: 1),
-    ); //DateTime.parse(widget.paend);
+    ); //DateTime.parse(widget.availableTo);
     pre();
-    super.initState();
   }
 
   Future getData() async {
@@ -287,7 +329,7 @@ class _RentnowScreenState extends State<RentnowScreen> {
 
     for (final im in imageEntries) {
       final raw = (im.path ?? '').toString().trim();
-      if (raw.isEmpty || raw.toLowerCase() == 'null') continue;
+      if (raw.isEmpty) continue;
       urls.add(raw.toLowerCase().startsWith('http') ? raw : AppUrl.baseUrlM + raw);
     }
     return urls;
@@ -295,8 +337,48 @@ class _RentnowScreenState extends State<RentnowScreen> {
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
+  bool _isMissingVendorAccount(dynamic accountId) {
+    final text = accountId?.toString().trim() ?? '';
+    return text.isEmpty || text == '0';
+  }
+
+  int _money(dynamic v) =>
+      int.tryParse('${v ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+  String _moneyLabel(dynamic v) {
+    final amount = _money(v);
+    return '\$${amount.toStringAsFixed(0)}';
+  }
+
+  Widget _pricingRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 17,
+              color: const Color(0xFF494A50),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 17,
+              color: _titleDark,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   DateTime _lastAllowedDate() {
-    final parsed = DateTime.tryParse(widget.paend.toString());
+    final parsed = DateTime.tryParse(widget.availableTo.toString());
     final now = DateTime.now();
     if (parsed == null) return DateTime(now.year + 1, now.month, now.day);
     return _dateOnly(parsed);
@@ -578,10 +660,6 @@ class _RentnowScreenState extends State<RentnowScreen> {
     super.dispose();
   }
 
-  //  void dispose() {
-  //   _locationController.dispose();
-  //   super.dispose();
-  // }
 
   @override
   Widget build(BuildContext context) {
@@ -616,7 +694,7 @@ class _RentnowScreenState extends State<RentnowScreen> {
                             final images = _extractRentImageUrls();
                             if (images.isEmpty) {
                               return Image.asset(
-                                'assets/slicing/placeholder.png',
+                                'assets/images/placeholder.png',
                                 fit: BoxFit.cover,
                               );
                             }
@@ -630,12 +708,12 @@ class _RentnowScreenState extends State<RentnowScreen> {
                                   imageUrl: images[i],
                                   fit: BoxFit.cover,
                                   placeholder: (context, url) => Image.asset(
-                                    'assets/slicing/placeholder.png',
+                                    'assets/images/placeholder.png',
                                     fit: BoxFit.cover,
                                   ),
                                   errorWidget: (context, url, error) =>
                                       Image.asset(
-                                    'assets/slicing/placeholder.png',
+                                    'assets/images/placeholder.png',
                                     fit: BoxFit.cover,
                                   ),
                                 );
@@ -710,66 +788,24 @@ class _RentnowScreenState extends State<RentnowScreen> {
                     ),
                   ),
                 ),
-                // Container(
-                //   width: 391,
-                //   height: 223,
-                //   decoration:
-                //       BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(width: 1, color: Colors.black.withOpacity(0.11))),
-                //   child: Padding(
-                //     padding: EdgeInsets.symmetric(horizontal: 20),
-                //     child: Column(
-                //       mainAxisAlignment: MainAxisAlignment.center,
-                //       children: [
-                //         Row(
-                //           mainAxisAlignment: MainAxisAlignment.center,
-                //           crossAxisAlignment: CrossAxisAlignment.end,
-                //           children: [
-                //             Container(
-                //               width: 90,
-                //               height: 135,
-                //               child: Image.asset(
-                //                 "assets/slicing/Layer 4@3x.png",
-                //                 fit: BoxFit.fill,
-                //               ),
-                //             ),
-                //             Container(
-                //               width: 128,
-                //               height: 170,
-                //               child: Image.asset(
-                //                 "assets/slicing/Layer 4@3x.png",
-                //                 fit: BoxFit.fill,
-                //               ),
-                //             ),
-                //             Container(
-                //               width: 90,
-                //               height: 135,
-                //               child: Image.asset(
-                //                 "assets/slicing/Layer 4@3x.png",
-                //                 fit: BoxFit.fill,
-                //               ),
-                //             ),
-                //           ],
-                //         ),
-                //       ],
-                //     ),
-                //   ),
-                // ),
-                // SizedBox(
-                //   height: 5,
-                // ),
                 const SizedBox(height: 28),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      ApiRepository.shared.getProductsByIdList!.data![0].name
-                          .toString(),
-                      style: GoogleFonts.inter(
-                        fontSize: 22,
-                        color: Colors.black,
-                        fontWeight: FontWeight.w700,
+                    Expanded(
+                      child: Text(
+                        ApiRepository.shared.getProductsByIdList!.data![0].name
+                            .toString(),
+                        style: GoogleFonts.inter(
+                          fontSize: 22,
+                          color: Colors.black,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 8),
                     _myProductsStyleStars(
                       double.tryParse(
                             ApiRepository.shared
@@ -805,9 +841,15 @@ class _RentnowScreenState extends State<RentnowScreen> {
                     ),
                   ],
                 ),
+                if (widget.isDelivery == 1) ...[
+                  _pricingRow(
+                    'Delivery',
+                    _moneyLabel(widget.delivery_charges),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Text(
-                  (ApiRepository.shared.getProductsByIdList!.data![0].serviceAgreements ??
+                  (ApiRepository.shared.getProductsByIdList!.data![0].description ??
                           ApiRepository.shared.getProductsByIdList!.data![0]
                               .specifications ??
                           '')
@@ -906,61 +948,16 @@ class _RentnowScreenState extends State<RentnowScreen> {
                     ),
                   ],
                 ),
-                // SizedBox(
-                //   height: 15,
-                // ),
-                // Row(
-                //   children: [
-                //     // SizedBox(
-                //     //   height: 10,
-                //     // ),
-                //     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                //       Text(
-                //         "Shipping Address",
-                //         style: TextStyle(fontSize: 17, color: Colors.black),
-                //       ),
-                //       SizedBox(
-                //         height: 5,
-                //       ),
-                //       Container(
-                //         width: 365,
-                //         height: 58,
-                //         decoration: BoxDecoration(
-                //           borderRadius: BorderRadius.circular(16),
-                //           border: Border.all(
-                //             width: 1,
-                //             color: Color(0xffFEB038),
-                //           ),
-                //         ),
-                //         child: TextFormField(
-                //           controller: ShippingAddressController,
-                //           style: TextStyle(
-                //             fontSize: 17,
-                //             color: Colors.black,
-                //           ),
-                //           keyboardType: TextInputType.text,
-                //           decoration: InputDecoration(
-                //             disabledBorder: InputBorder.none,
-                //             errorBorder: InputBorder.none,
-                //             border: InputBorder.none,
                 //             contentPadding: EdgeInsets.only(left: 10, top: 5),
-                //           ),
-                //         ),
-                //       ),
-                //     ]),
-                //   ],
-                // ),
-                // SizedBox(
-                //   height: 3,
-                // ),
-                // TxtfldforLocation("Current Address", _CurrentAddressController),
                 Container(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(height: res_height * 0.02),
                       Text(
-                        'Current Address',
+                        widget.isDelivery == 1
+                            ? 'Delivery address'
+                            : 'Pickup location',
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           color: _titleDark,
@@ -968,146 +965,91 @@ class _RentnowScreenState extends State<RentnowScreen> {
                         ),
                       ),
                       SizedBox(height: res_height * 0.005),
-                      Container(
-                        // height: 70,
-                        width: res_width * 0.89,
-                        child: TextField(
-                          onChanged: (value) {
-                            setState(() {
-                              _onChanged2();
-                            });
-                          },
-                          maxLines: 1,
-                          controller: _CurrentAddressController,
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 12,
-                            ),
-                            // hintText:placholder,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15.0),
-                            ),
-                            enabledBorder: const OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                color: Color(0xFFE1E1E1),
-                                width: 1,
+                      if (widget.isDelivery == 1)
+                        SizedBox(
+                          width: res_width * 0.89,
+                          child: AddressAutocompleteField(
+                            controller: _CurrentAddressController,
+                            resolvedAddress: _resolvedAddress,
+                            onEditingStarted: _clearResolvedAddress,
+                            onAddressSelected: _applySelectedAddress,
+                            hint: 'Start typing your address',
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 12,
                               ),
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(15),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(15),
                               ),
-                            ),
-                            focusedBorder: const OutlineInputBorder(
-                              borderSide: const BorderSide(
-                                color: Color(0xFFE1E1E1),
-                                width: 1,
+                              enabledBorder: const OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: Color(0xFFE1E1E1),
+                                  width: 1,
+                                ),
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(15),
+                                ),
                               ),
-                              borderRadius: BorderRadius.all(
-                                Radius.circular(15),
+                              focusedBorder: const OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: Color(0xFFE1E1E1),
+                                  width: 1,
+                                ),
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(15),
+                                ),
                               ),
                             ),
                           ),
+                        )
+                      else
+                        Container(
+                          width: res_width * 0.89,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(color: const Color(0xFFE1E1E1)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.location_on_outlined,
+                                size: 20,
+                                color: _accent,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _pickupLocationLabel(),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 15,
+                                    color: _bodyGrey,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
-                SizedBox(
-                  // height: res_height * 0.05,
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    physics: ScrollPhysics(),
-                    itemCount: _placeList1.length,
-                    itemBuilder: ((context, index) {
-                      String name = _placeList1[index]["description"];
-
-                      if (_CurrentAddressController.text.isEmpty) {
-                        return Text("");
-                      } else if (name.toLowerCase().contains(
-                        _CurrentAddressController.text.toLowerCase(),
-                      )) {
-                        return ListTile(
-                          onTap: () async {
-                            _locationController.text =
-                                _placeList1[index]["description"];
-                            _CurrentAddressController.text =
-                                _placeList1[index]["description"];
-                            List<Location> location = await locationFromAddress(
-                              _placeList1[index]["description"],
-                            );
-                            setState(() {
-                              // _CurrentAddressController.removeListener(() {});
-                              Latitiude = location.last.latitude.toString();
-                              Longitude = location.last.longitude.toString();
-                              _getZipCodeFromCoordinates(
-                                location.last.latitude,
-                                location.last.longitude,
-                              );
-                              _placeList1 = [];
-                            });
-                          },
-                          leading: CircleAvatar(
-                            child: Icon(Icons.pin_drop, color: Colors.white),
-                          ),
-                          title: Text(_placeList1[index]["description"]),
-                        );
-                      } else {
-                        return SizedBox.shrink();
-                      }
-                    }),
-                  ),
-                ),
                 SizedBox(height: 5),
-                // TxtfldforLocation("Shipping Address", _locationController),
-                // SizedBox(
-                //   // height: res_height * 0.05,
-                // child:
-                // ListView.builder(
-                //     shrinkWrap: true,
-                //     physics: ScrollPhysics(),
-                //     itemCount: _placeList.length,
-                //     itemBuilder: ((context, index) {
-                //       String name = _placeList[index]["description"];
 
-                //       if (_locationController.text.isEmpty) {
-                //         return Text("");
-                //       } else if (name.toLowerCase().contains(_locationController.text.toLowerCase())) {
-                //         return ListTile(
-                //           onTap: () async {
-                //             _locationController.text = _placeList[index]["description"];
-                //             List<Location> location = await locationFromAddress(_placeList[index]["description"]);
-                //             setState(() {
-                //               _locationController.removeListener(() {});
-                //               Latitiude = location.last.latitude.toString();
-                //               Longitude = location.last.longitude.toString();
 
-                //               // Use geocoding to get the ZIP code
-                //               _getZipCodeFromCoordinates(location.last.latitude, location.last.longitude);
-                //               _placeList = [];
-                //             });
-                //           },
-                //           leading: CircleAvatar(child: Icon(Icons.pin_drop, color: Colors.white)),
-                //           title: Text(_placeList[index]["description"]),
-                //         );
-                //       } else {
-                //         return SizedBox.shrink();
-                //       }
-                //     })),
-                // ),
                 SizedBox(height: 20),
                 Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
                 SizedBox(height: 20),
 
                 Column(
                   children: [
-                    // Text(
-                    //   "Owner Info",
-                    //   style: TextStyle(fontSize: 24, color: Colors.black, fontFamily: "Inter, Bold"),
-                    // ),
-                    // SizedBox(
-                    //   height: 10,
-                    // ),
                     GestureDetector(
                       onTap: () {
                         Get.to(
@@ -1120,36 +1062,12 @@ class _RentnowScreenState extends State<RentnowScreen> {
                         );
                       },
                       child: Row(
-                        // mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(shape: BoxShape.circle),
-                            child:
-                                widget.vendorImage == ""
-                                    ? const CircleAvatar(
-                                        radius: 33,
-                                        backgroundColor: Color(0xFFE6E6E6),
-                                        child: Icon(
-                                          Icons.person,
-                                          color: Color(0xFF9E9E9E),
-                                          size: 20,
-                                        ),
-                                      )
-                                    : CircleAvatar(
-                                      backgroundImage: NetworkImage(
-                                        AppUrl.baseUrlM +
-                                            ApiRepository
-                                                .shared
-                                                .getUserCredentialModelList!
-                                                .data![0]
-                                                .image
-                                                .toString(),
-                                        // fit: BoxFit.contain,
-                                      ),
-                                    ),
+                          ProfileImage.circularAvatar(
+                            radius: 30,
+                            baseUrl: AppUrl.baseUrlM,
+                            imagePath: widget.vendorImage,
                           ),
                           SizedBox(width: 10),
                           Column(
@@ -1165,14 +1083,6 @@ class _RentnowScreenState extends State<RentnowScreen> {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              // Text(
-                              //   widget.vendorAddress == "" ? "" : widget.vendorAddress,
-                              //   style: TextStyle(fontSize: 16, color: Colors.black.withOpacity(0.53), fontFamily: "Inter, Light"),
-                              // ),
-                              // Text(
-                              //   widget.cell == "" ? "" : widget.cell,
-                              //   style: TextStyle(fontSize: 16, color: Colors.black, fontFamily: "Inter, Light"),
-                              // )
                             ],
                           ),
                         ],
@@ -1180,89 +1090,11 @@ class _RentnowScreenState extends State<RentnowScreen> {
                     ),
                   ],
                 ),
-                // SizedBox(
-                //   height: 30,
-                // ),
-                // Row(
-                //   children: [
-                //     GestureDetector(
-                //       onTap: () {
-                //         setState(() {
-                //           onlinepay = false;
-                //           // cod = false;
-                //         });
-                //       },
-                //       child: Container(
-                //         height: 19,
-                //         width: 19,
-                //         decoration: BoxDecoration(
-                //             shape: BoxShape.circle, border: Border.all(color: onlinepay == false ? Color(0xff303030) : Colors.black, width: 3)),
-                //         child: Icon(
-                //           Icons.circle_rounded,
-                //           color: onlinepay == false ? Color(0xff303030) : Colors.white,
-                //           size: 13,
-                //         ),
-                //       ),
-                //     ),
-                //     SizedBox(
-                //       width: 20,
-                //     ),
-                //     Text(
-                //       "Online Payment",
-                //       style: TextStyle(fontSize: 21, color: Colors.black, fontFamily: "Inter, Regular"),
-                //     ),
-                //     SizedBox(
-                //       width: 20,
-                //     ),
-                //     // GestureDetector(
-                //     //   onTap: () {
-                //     //     setState(() {
-                //     //       onlinepay = true;
-                //     //       // cod = true;
-                //     //     });
-                //     //   },
-                //     //   child: Container(
-                //     //     height: 19,
-                //     //     width: 19,
-                //     //     decoration: BoxDecoration(
-                //     //         shape: BoxShape.circle, border: Border.all(color: onlinepay == true ? Color(0xff303030) : Colors.black, width: 3)),
-                //     //     child: Icon(
-                //     //       Icons.circle_rounded,
-                //     //       color: onlinepay == true ? Color(0xff303030) : Colors.white,
-                //     //       size: 13,
-                //     //     ),
-                //     //   ),
-                //     // ),
-                //     // SizedBox(
-                //     //   width: 20,
-                //     // ),
-                //     // Text(
-                //     //   "COD",
-                //     //   style: TextStyle(fontSize: 21, color: Colors.black, fontFamily: "Inter, Regular"),
-                //     // ),
-                //   ],
-                // ),
                 SizedBox(height: 20),
                 Row(
                   children: [
                     GestureDetector(
                       onTap: () {
-                        DateTime normalizedSelectedDate = DateTime(
-                          selectedDate.year,
-                          selectedDate.month,
-                          selectedDate.day,
-                        );
-
-                        int diff =
-                            selectedDate1
-                                .difference(normalizedSelectedDate)
-                                .inDays +
-                            1;
-                        // int diff = selectedDate1.difference(selectedDate).inDays;
-                        int amount = int.parse(widget.price.toString()) * diff;
-                        //         .toString(),);
-                        //         .format(selectedDate)
-                        //         .toString(),)
                         if (onlinepay == true) {
                           if (DateTime.parse(selectedDate.toString())
                                   .difference(
@@ -1270,23 +1102,11 @@ class _RentnowScreenState extends State<RentnowScreen> {
                                   )
                                   .inMilliseconds >=
                               0) {
-                            final snackBar = new SnackBar(
-                              content: new Text("Please Enter Valid End Date"),
-                            );
-                            ScaffoldMessenger.of(
-                              context,
-                            ).showSnackBar(snackBar);
-                            // Utils.flushBarErrorMessage(
-                            //     'Please Enter Valid End Date', context);
+                            showAppErrorSnackbar('Please Enter Valid End Date', title: 'Required');
                           } else if (emailController.text.isNotEmpty &&
-                              _locationController.text.toString().isNotEmpty &&
+                              _hasRequiredLocation() &&
                               nameController.text.isNotEmpty) {
-                            final snackBar = new SnackBar(
-                              content: new Text("Please Wait"),
-                            );
-                            ScaffoldMessenger.of(
-                              context,
-                            ).showSnackBar(snackBar);
+                            showAppSnackbar('Required', 'Please Wait');
                             ApiRepository.shared.postOrder(
                               context,
                               userID,
@@ -1299,25 +1119,21 @@ class _RentnowScreenState extends State<RentnowScreen> {
                               ).format(selectedDate1).toString(),
                               fullname,
                               emailController.text.toString(),
-                              _locationController.text.toString(),
-                              Latitiude,
-                              Longitude,
-                              widget.route == "simple" ? 0 : amount,
-                              _CurrentAddressController.text.toString(),
-                              Latitiude,
-                              Longitude,
+                              _checkoutLocation(),
+                              _checkoutLat(),
+                              _checkoutLng(),
+                              _checkoutLocation(),
+                              widget.security_deposit.toString(),
+                              '',
                             );
                           } else {
                             String message = "Fields Cannot Be Empty";
-                            if (_locationController.text.toString().isEmpty) {
-                              message = "Please enter location";
+                            if (!_hasRequiredLocation()) {
+                              message = widget.isDelivery == 1
+                                  ? ParsedUsAddress.selectFromSuggestionsMessage
+                                  : "Pickup location is unavailable for this listing";
                             }
-                            final snackBar = new SnackBar(
-                              content: new Text(message),
-                            );
-                            ScaffoldMessenger.of(
-                              context,
-                            ).showSnackBar(snackBar);
+                            showAppErrorSnackbar(message, title: 'Required');
                           }
                         } else {
                           if (DateTime.parse(selectedDate.toString())
@@ -1326,25 +1142,13 @@ class _RentnowScreenState extends State<RentnowScreen> {
                                   )
                                   .inMilliseconds >=
                               0) {
-                            final snackBar = new SnackBar(
-                              content: new Text("Please Enter Valid End Date"),
+                            showAppErrorSnackbar('Please Enter Valid End Date', title: 'Required');
+                          } else if (_isMissingVendorAccount(widget.vendorAccountId)) {
+                            showAppErrorSnackbar(
+                              'Vendor account not found. Please ensure the vendor has completed Stripe onboarding.',
                             );
-                            ScaffoldMessenger.of(
-                              context,
-                            ).showSnackBar(snackBar);
-                            // Utils.flushBarErrorMessage(
-                            //     'Please Enter Valid End Date', context);
-                          } else if (widget.vendorAccountId == "0" ||
-                              widget.vendorAccountId == "" ||
-                              widget.vendorAccountId == 0) {
-                            final snackBar = new SnackBar(
-                              content: new Text("Vendor account not found. Please ensure the vendor has completed Stripe onboarding."),
-                            );
-                            ScaffoldMessenger.of(
-                              context,
-                            ).showSnackBar(snackBar);
                           } else if (emailController.text.isNotEmpty &&
-                              _locationController.text.toString().isNotEmpty &&
+                              _hasRequiredLocation() &&
                               nameController.text.isNotEmpty) {
                             Get.to(
                               () => CheckoutScreen(
@@ -1361,36 +1165,31 @@ class _RentnowScreenState extends State<RentnowScreen> {
                                 widget.cell,
                                 widget.vendorImage,
                                 widget.vendorID,
-                                widget.pastart,
-                                widget.paend,
+                                widget.availableFrom,
+                                widget.availableTo,
                                 widget.price,
-                                // amount,
                                 widget.vendorAccountId,
-                                widget.vendorPayPalEmail,
                                 fullname,
                                 emailController.text.toString(),
-                                _locationController.text.toString(),
-                                Latitiude,
-                                Longitude,
-                                widget.route == "simple" ? 0 : amount,
+                                _checkoutLocation(),
+                                _checkoutLat(),
+                                _checkoutLng(),
                                 widget.delivery_charges,
                                 JebbyFee,
                                 widget.security_deposit,
                                 zipCode,
                                 countryCode,
+                                widget.isDelivery,
                               ),
                             );
                           } else {
                             String message = "Fields Cannot Be Empty";
-                            if (_locationController.text.toString().isEmpty) {
-                              message = "Please enter location";
+                            if (!_hasRequiredLocation()) {
+                              message = widget.isDelivery == 1
+                                  ? ParsedUsAddress.selectFromSuggestionsMessage
+                                  : "Pickup location is unavailable for this listing";
                             }
-                            final snackBar = new SnackBar(
-                              content: new Text(message),
-                            );
-                            ScaffoldMessenger.of(
-                              context,
-                            ).showSnackBar(snackBar);
+                            showAppErrorSnackbar(message, title: 'Required');
                           }
                         }
                       },
@@ -1425,80 +1224,6 @@ class _RentnowScreenState extends State<RentnowScreen> {
     );
   }
 
-  // Future<void> initPaymentSheet() async {
-  //     try {
-  //       // 1. create payment intent on the server
-  //       final data = await _createTestPaymentSheet();
 
-  //       // 2. initialize the payment sheet
-  //      await Stripe.instance.initPaymentSheet(
-  //         paymentSheetParameters: SetupPaymentSheetParameters(
-  //           // Enable custom flow
-  //           customFlow: true,
-  //           // Main params
-  //           merchantDisplayName: 'Flutter Stripe Store Demo',
-  //           paymentIntentClientSecret: data['paymentIntent'],
-  //           // Customer keys
-  //           customerEphemeralKeySecret: data['ephemeralKey'],
-  //           customerId: data['customer'],
-  //           // Extra options
-  //           // testEnv: true,
-  //           // applePay: true,
-  //           // googlePay: true,
-  //           // style: ThemeMode.dark,
-  //           // merchantCountryCode: 'DE',
-  //         ),
-  //       );
-  //       setState(() {
-  //         _ready = true;
-  //       });
-  //     } catch (e) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text('Error: $e')),
-  //       );
-  //       rethrow;
-  //     }
-  // }
 
-  TxtfldforLocation(txt, _controller) {
-    double res_width = MediaQuery.of(context).size.width;
-    double res_height = MediaQuery.of(context).size.height;
-    return Container(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(height: res_height * 0.02),
-          Text(txt, style: TextStyle(fontSize: 17, color: Colors.black)),
-          SizedBox(height: res_height * 0.005),
-          Container(
-            // height: 70,
-            width: res_width * 0.89,
-            child: TextField(
-              onChanged: (value) {
-                setState(() {
-                  _onChanged();
-                });
-              },
-              maxLines: 1,
-              controller: _locationController,
-              decoration: InputDecoration(
-                // hintText:placholder,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15.0),
-                ),
-                enabledBorder: const OutlineInputBorder(
-                  borderSide: const BorderSide(color: kprimaryColor, width: 1),
-                  borderRadius: BorderRadius.all(Radius.circular(15)),
-                ),
-                focusedBorder: const OutlineInputBorder(
-                  borderSide: const BorderSide(color: kprimaryColor, width: 1),
-                  borderRadius: BorderRadius.all(Radius.circular(15)),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

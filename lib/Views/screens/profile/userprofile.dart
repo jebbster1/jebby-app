@@ -4,7 +4,9 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
 import 'package:jebby/res/color.dart';
+import 'package:jebby/utils/profile_image.dart';
 
 import '../../../model/user_model.dart';
 import '../../../view_model/apiServices.dart';
@@ -52,8 +54,8 @@ class _RenterProfileState extends State<RenterProfile> {
   String? role;
   bool _isCurrentUserProfile = false;
 
-  var imagesapi = "null";
-  var back_image_api = "null";
+  var imagesapi = "";
+  var back_image_api = "";
   var addressapi = "";
   var phoneapi = "";
 
@@ -75,24 +77,21 @@ class _RenterProfileState extends State<RenterProfile> {
     getUserDate().then((value) {
       final currentUserId = value.id.toString();
       final targetVendorId =
-          (widget.vendorID == null || widget.vendorID.toString() == 'null')
-              ? currentUserId
-              : widget.vendorID.toString();
+          widget.vendorID == null ? currentUserId : widget.vendorID.toString();
 
       setState(() {
         token = value.token.toString();
         id = targetVendorId;
         _isCurrentUserProfile = targetVendorId == currentUserId;
-        fullname = (widget.vendorName == null ||
-                widget.vendorName.toString() == 'null')
+        fullname = widget.vendorName == null
             ? value.name.toString()
             : widget.vendorName.toString();
         email = value.email.toString();
         role = value.role.toString();
       });
 
-      getReviews();
-      getProductsApi(id);
+      getReviewsFor(targetVendorId);
+      getProductsApi(targetVendorId);
 
       ApiRepository.shared.getAllVendorProductsByID(
         (list) {
@@ -111,9 +110,9 @@ class _RenterProfileState extends State<RenterProfile> {
     });
   }
 
-  void getReviews() {
+  void getReviewsFor(String vendorId) {
     ApiRepository.shared.reviewsByVendorId(
-      id.toString(),
+      vendorId,
       (list) {
         if (mounted) {
           setState(() {
@@ -157,6 +156,27 @@ class _RenterProfileState extends State<RenterProfile> {
       2: counts[2]! / total,
       1: counts[1]! / total,
     };
+  }
+
+  static const Color _starAccent = Color(0xFFF6AE02);
+  static const Color _starInactive = Color(0xFFC6C8CF);
+
+  Widget _profileSummaryStars(double rating, {double size = 20}) {
+    final filledStars = (rating.isNaN ? 0.0 : rating).round().clamp(0, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (index) {
+        final active = index < filledStars;
+        return Padding(
+          padding: const EdgeInsets.only(right: 2),
+          child: Icon(
+            active ? Icons.star : Icons.star_border,
+            color: active ? _starAccent : _starInactive,
+            size: size,
+          ),
+        );
+      }),
+    );
   }
 
   static String _timeAgo(String? createdAt) {
@@ -256,21 +276,21 @@ class _RenterProfileState extends State<RenterProfile> {
                   width: double.infinity,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(20),
-                    child: back_image_api == "null"
-                        ? Image.asset("assets/slicing/placeholder.png", fit: BoxFit.cover)
+                    child: !ProfileImage.isValidPath(back_image_api)
+                        ? Image.asset("assets/images/placeholder.png", fit: BoxFit.cover)
                         : Image.network(
-                            Url + back_image_api,
+                            ProfileImage.resolveUrl(Url, back_image_api)!,
                             fit: BoxFit.cover,
                             loadingBuilder: (context, child, loadingProgress) {
                               if (loadingProgress == null) return child;
                               return Image.asset(
-                                "assets/slicing/placeholder.png",
+                                "assets/images/placeholder.png",
                                 fit: BoxFit.cover,
                               );
                             },
                             errorBuilder: (context, error, stackTrace) {
                               return Image.asset(
-                                "assets/slicing/placeholder.png",
+                                "assets/images/placeholder.png",
                                 fit: BoxFit.cover,
                               );
                             },
@@ -294,9 +314,10 @@ class _RenterProfileState extends State<RenterProfile> {
                       backgroundColor: Colors.white,
                       child: CircleAvatar(
                         radius: 40,
-                        backgroundImage: imagesapi == "null"
-                            ? const AssetImage("assets/slicing/blankuser.jpeg")
-                            : NetworkImage(Url + imagesapi) as ImageProvider,
+                        backgroundImage: ProfileImage.avatarProvider(
+                          Url,
+                          imagesapi,
+                        ),
                       ),
                     ),
                   ),
@@ -324,11 +345,11 @@ class _RenterProfileState extends State<RenterProfile> {
               ),
               child: Row(
                 children: [
-                  Expanded(child: statItem("assets/newpacks/myproducts.png", "$productsCount", "PRODUCTS")),
+                  Expanded(child: statItem("assets/images/myproducts.png", "$productsCount", "PRODUCTS")),
                   Container(width: 1, height: 50, color: Colors.grey.shade300),
-                  Expanded(child: statItem("assets/newpacks/myorders1.png", "$ordersCount", "ORDERS")),
+                  Expanded(child: statItem("assets/images/myorders1.png", "$ordersCount", "ORDERS")),
                   Container(width: 1, height: 50, color: Colors.grey.shade300),
-                  Expanded(child: statItem("assets/newpacks/rating1.png", "$_reviewsCount", "REVIEWS")),
+                  Expanded(child: statItem("assets/images/rating1.png", "$_reviewsCount", "REVIEWS")),
                 ],
               ),
             ),
@@ -354,7 +375,7 @@ class _RenterProfileState extends State<RenterProfile> {
                           const SizedBox(height: 4),
                           Text("$_reviewsCount Review${_reviewsCount == 1 ? '' : 's'}", style: GoogleFonts.inter(fontSize: 14)),
                           const SizedBox(height: 8),
-                          Row(children: List.generate(5, (_) => const Icon(Icons.star, color: Colors.amber, size: 20))),
+                          _profileSummaryStars(_averageRating),
                         ],
                       ),
                       const SizedBox(width: 24),
@@ -521,7 +542,7 @@ class _RenterProfileState extends State<RenterProfile> {
                 _infoRow(Icons.person, "Name", fullname ?? ""),
                 _infoRow(Icons.email, "Email Address", email ?? ""),
                 // _infoRow(Icons.phone, "Mobile Number", phoneapi.isNotEmpty && phoneapi != "null" ? phoneapi : "—"),
-                _infoRow(Icons.location_on, "My Address", addressapi.isNotEmpty && addressapi != "null" ? addressapi : "—"),
+                _infoRow(Icons.location_on, "My Address", addressapi.isNotEmpty ? addressapi : "—"),
               ],
             ),
           ),
@@ -552,22 +573,10 @@ class _RenterProfileState extends State<RenterProfile> {
   }
 
   Widget _buildRenterAvatar() {
-    final path = imagesapi.toString().trim();
-    final hasApiImage = path.isNotEmpty && path != "null";
-    final imageUrl = hasApiImage
-        ? (path.toLowerCase().startsWith('http') ? path : Url + path)
-        : null;
-    if (imageUrl == null || imageUrl.isEmpty) {
-      return CircleAvatar(
-        radius: 55,
-        backgroundColor: Colors.grey.shade300,
-        child: const Icon(Icons.person, size: 60, color: Colors.white),
-      );
-    }
-    return CircleAvatar(
+    return ProfileImage.circularAvatar(
       radius: 55,
-      backgroundImage: NetworkImage(imageUrl),
-      onBackgroundImageError: (_, __) {},
+      baseUrl: Url,
+      imagePath: imagesapi,
     );
   }
 
@@ -637,7 +646,7 @@ class _RenterProfileState extends State<RenterProfile> {
                 ),
                 child: Center(
                   child: Image.asset(
-                    "assets/newpacks/$imagename",
+                    "assets/images/$imagename",
                     height: 20,
                     width: 20,
                     fit: BoxFit.contain,
@@ -668,23 +677,24 @@ class _RenterProfileState extends State<RenterProfile> {
     );
   }
 
-  Future getProductsApi(id) async {
-    final response = await http.get(Uri.parse('${Url}/UserProfileGetById/${id}'));
+  Future getProductsApi(dynamic profileId) async {
+    final response = await http.get(
+      Uri.parse('${Url}/UserProfileGetById/${profileId}'),
+      headers: await ApiHeaders.json(),
+    );
     var data = jsonDecode(response.body);
     setState(() {
       if (data["data"].length != 0) {
-        imagesapi = data["data"][0]["image"].toString();
-        back_image_api = data["data"][0]["back_image"].toString();
+        final profileImage = data["data"][0]["profile_image"]?.toString().trim() ?? '';
+        imagesapi = ProfileImage.sanitizePath(profileImage);
+        final coverImage = data["data"][0]["cover_image"]?.toString().trim() ?? '';
+        back_image_api = ProfileImage.sanitizePath(coverImage);
         final apiRole = data["data"][0]["role"]?.toString();
-        if (apiRole != null && apiRole.trim().isNotEmpty && apiRole != "null") {
+        if (apiRole != null && apiRole.trim().isNotEmpty) {
           role = apiRole;
         }
-        addressapi = data["data"][0]["address"]?.toString() ??
-            data["data"][0]["location"]?.toString() ??
-            "";
-        phoneapi = data["data"][0]["number"]?.toString() ??
-            data["data"][0]["phone"]?.toString() ??
-            "";
+        addressapi = data["data"][0]["address"]?.toString() ?? "";
+        phoneapi = data["data"][0]["phone_number"]?.toString() ?? "";
       }
     });
   }

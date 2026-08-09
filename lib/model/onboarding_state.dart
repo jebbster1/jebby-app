@@ -87,9 +87,9 @@ class OnboardingState {
           OnboardingStatus.notStarted,
       stripeAccountId: json['stripe_account_id']?.toString(),
       stripeOnboardingComplete:
-          json['stripe_onboarding_complete'] == true ||
-          json['stripe_onboarding_complete'] == 1 ||
-          json['stripe_onboarding_complete'] == '1',
+          json['is_stripe_onboarding_complete'] == true ||
+          json['is_stripe_onboarding_complete'] == 1 ||
+          json['is_stripe_onboarding_complete'] == '1',
     );
   }
 
@@ -98,7 +98,7 @@ class OnboardingState {
       'onboarding_step': onboardingStep,
       'onboarding_status': onboardingStatus,
       'stripe_account_id': stripeAccountId,
-      'stripe_onboarding_complete': stripeOnboardingComplete,
+      'is_stripe_onboarding_complete': stripeOnboardingComplete,
     };
   }
 

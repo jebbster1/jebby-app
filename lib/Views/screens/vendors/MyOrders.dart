@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:jebby/utils/api_headers.dart';
 import 'package:intl/intl.dart';
 import 'package:jebby/res/color.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/Views/screens/vendors/OrderDetail.dart';
 import 'package:jebby/Views/screens/vendors/vendorhome.dart';
 import 'package:provider/provider.dart';
@@ -106,14 +108,7 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
 
   void orderStatus(dynamic id, int status, String desc) {
     orderStatusUpdate(id, status, desc, sourceId, 'listing');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Updating status…',
-          style: GoogleFonts.inter(),
-        ),
-      ),
-    );
+    showAppSnackbar('Status', 'Updating status…');
   }
 
   Future<PostOrderStatusUpdateModel> orderStatusUpdate(
@@ -132,7 +127,7 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
     final response = await http.post(
       Uri.parse(AppUrl.orderStatusById),
       body: request,
-      headers: {'Content-type': 'application/json'},
+      headers: await ApiHeaders.json(),
     );
     if (response.statusCode == 200) {
       try {
@@ -142,7 +137,6 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
           }
         }, (error) {});
       } catch (error) {
-        // onError(error.toString());
       }
     }
     return PostOrderStatusUpdateModel();
@@ -157,7 +151,6 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
     required dynamic orderId,
     required String email,
     required String location,
-    required String nego_price,
   }) {
     Get.to(
       () => OrderDetailScreen(
@@ -172,7 +165,6 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
         route: 'new',
         email: email,
         location: location,
-        nego_price: nego_price,
       ),
     );
   }
@@ -186,15 +178,13 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
     required String end,
     required String email,
     required String location,
-    required String nego_price,
   }) {
-    final priceStr = _displayPrice(price, nego_price);
     final due = _formatVendorDate(end);
     return _VendorOrderCardShell(
       badgeLabel: 'NEW',
       badgeBg: const Color(0xFFFFF3E0),
       badgeFg: const Color(0xFFE65100),
-      displayPrice: priceStr,
+      displayPrice: price,
       title: name,
       metaLine: 'Return due: $due',
       onHeaderTap:
@@ -207,7 +197,6 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
             orderId: orderId,
             email: email,
             location: location,
-            nego_price: nego_price,
           ),
       actionRow: Row(
         children: [
@@ -325,7 +314,7 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
   }
 
   String _formatVendorDate(String? raw) {
-    if (raw == null || raw.isEmpty || raw == 'null') return '—';
+    if (raw == null || raw.isEmpty) return '—';
     try {
       return DateFormat('d/M/yyyy').format(DateTime.parse(raw));
     } catch (_) {
@@ -333,16 +322,7 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
     }
   }
 
-  String _displayPrice(dynamic totalPrice, dynamic negoPrice) {
-    final int nego;
-    if (negoPrice == null) {
-      nego = 0;
-    } else if (negoPrice is int) {
-      nego = negoPrice;
-    } else {
-      nego = int.tryParse(negoPrice.toString()) ?? 0;
-    }
-    if (nego != 0) return nego.toString();
+  String _displayPrice(dynamic totalPrice) {
     if (totalPrice == null) return '0';
     return totalPrice.toString();
   }
@@ -410,7 +390,6 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
           end: data.originalReturn.toString(),
           email: data.email.toString(),
           location: data.location.toString(),
-          nego_price: data.negoPrice.toString(),
         );
       },
     );
@@ -441,7 +420,6 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
         final orderId = data.id;
         final email = data.email.toString();
         final location = data.location.toString();
-        final nego_price = data.negoPrice.toString();
         void openPending() {
           Get.to(
             () => OrderDetailScreen(
@@ -456,7 +434,6 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
               route: 'pending',
               email: email,
               location: location,
-              nego_price: nego_price,
             ),
           );
         }
@@ -465,7 +442,7 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
           badgeLabel: 'PENDING',
           badgeBg: const Color(0xFFFFF3E0),
           badgeFg: const Color(0xFFE65100),
-          displayPrice: _displayPrice(data.totalPrice, data.negoPrice),
+          displayPrice: _displayPrice(data.totalPrice),
           title: name,
           metaLine: 'Return due: ${_formatVendorDate(end)} · ${email}',
           onHeaderTap: openPending,
@@ -549,7 +526,6 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
         final orderId = data.id;
         final email = data.email.toString();
         final location = data.location.toString();
-        final nego_price = data.negoPrice.toString();
         void openCompleted() {
           Get.to(
             () => OrderDetailScreen(
@@ -564,7 +540,6 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
               route: 'complete',
               email: email,
               location: location,
-              nego_price: nego_price,
             ),
           );
         }
@@ -573,7 +548,7 @@ class _OrderRequestScreenState extends State<OrderRequestScreen> {
           badgeLabel: 'COMPLETED',
           badgeBg: const Color(0xFFE8F5E9),
           badgeFg: const Color(0xFF2E7D32),
-          displayPrice: _displayPrice(data.totalPrice, data.negoPrice),
+          displayPrice: _displayPrice(data.totalPrice),
           title: name,
           metaLine: 'Completed · Return was ${_formatVendorDate(end)}',
           onHeaderTap: openCompleted,

@@ -8,24 +8,22 @@ import 'package:jebby/model/user_model.dart';
 import 'package:jebby/view_model/user_view_model.dart';
 
 class SplashServices {
-  Future<UserModel> getUserDate() => UserViewModel().getUser();
+  Future<void> checkAuthentication(BuildContext context) async {
+    try {
+      final hasSession = await UserViewModel.hasActiveSession();
+      await Future.delayed(const Duration(seconds: 2));
 
-  void checkAuthentication(BuildContext context) async {
-    getUserDate()
-        .then((value) async {
-          if (value.role.toString() == 'null' || value.role.toString() == '') {
-            await Future.delayed(Duration(seconds: 3));
-            Get.offAll(() => LoginScreen());
-          } else {
-            await Future.delayed(Duration(seconds: 3));
-            
-            loginType = "user";
-            Get.offAll(() => MainScreen());
-          }
-        })
-        .onError((error, stackTrace) {
-          if (kDebugMode) {}
-        });
+      if (!hasSession) {
+        Get.offAll(() => LoginScreen());
+        return;
+      }
+
+      loginType = "user";
+      Get.offAll(() => MainScreen());
+    } catch (error) {
+      if (kDebugMode) {}
+      Get.offAll(() => LoginScreen());
+    }
   }
 }
 
@@ -41,12 +39,12 @@ class DataUsers {
   void profileData() async {
     getUserDate()
         .then((value) async {
-          token = value.token.toString();
-          id = value.id.toString();
-          fullname = value.name.toString();
-          email = value.email.toString();
-          phoneNumber = value.phoneNumber.toString();
-          role = value.role.toString();
+          token = value.token?.toString();
+          id = value.id?.toString();
+          fullname = value.name?.toString();
+          email = value.email?.toString();
+          phoneNumber = value.phoneNumber?.toString();
+          role = value.role?.toString();
         })
         .onError((error, stackTrace) {});
   }

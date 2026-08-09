@@ -173,8 +173,7 @@ class _FavouriteScreenState extends State<FavouriteScreen> {
         final data = list[index];
         final id = data.id.toString();
         final userID = data.userId.toString();
-        final servAgreement = data.serviceAgreements.toString();
-        final msg = data.isMessage;
+        final servAgreement = data.description.toString();
         final img = data.image.toString();
         final name = data.name.toString();
         final specs = data.specifications.toString();
@@ -199,7 +198,6 @@ class _FavouriteScreenState extends State<FavouriteScreen> {
                 specs,
                 userID,
                 servAgreement,
-                msg,
                 delivery_charges,
               ),
             );

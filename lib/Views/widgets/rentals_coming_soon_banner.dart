@@ -13,7 +13,7 @@ class RentalsComingSoonBanner extends StatefulWidget {
 
   final DateTime? rentalsEnabledAt;
 
-  static DateTime get defaultRentalsEnabledAt => DateTime(2026, 8, 19);
+  static DateTime get defaultRentalsEnabledAt => DateTime(2026, 9, 25);
 
   static const String dismissedKey = 'rentals_coming_soon_banner_dismissed';
 

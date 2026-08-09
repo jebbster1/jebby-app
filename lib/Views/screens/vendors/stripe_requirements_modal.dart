@@ -13,6 +13,7 @@ import 'package:jebby/model/stripe_requirement_fields.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/view_model/apiServices.dart';
 import 'package:jebby/view_model/onboarding_controller.dart';
+import 'package:jebby/utils/show_snackbar.dart';
 
 class StripeRequirementsModal extends StatefulWidget {
   final String userId;
@@ -106,16 +107,8 @@ class _StripeRequirementsModalState extends State<StripeRequirementsModal> {
     super.dispose();
   }
 
-  void _showSnack(String message) {
-    Get.snackbar(
-      'Required information',
-      message,
-      snackPosition: SnackPosition.BOTTOM,
-      backgroundColor: Colors.black87,
-      colorText: Colors.white,
-      margin: const EdgeInsets.all(16),
-    );
-  }
+  void _showSnack(String message) =>
+      showAppErrorSnackbar(message, title: 'Required');
 
   Future<void> _pickIdImage(bool isBack) async {
     final source = await showOnboardingImageSourceSheet(context);
@@ -301,14 +294,10 @@ class _StripeRequirementsModalState extends State<StripeRequirementsModal> {
       if (status == 'active' || status == 'pending') {
         Navigator.of(context).pop();
         widget.onSubmitted();
-        Get.snackbar(
-          'Submitted',
+        showAppSuccessSnackbar(
           response['message']?.toString() ??
               'Your information was submitted successfully.',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.black87,
-          colorText: Colors.white,
-          margin: const EdgeInsets.all(16),
+          title: 'Submitted',
         );
         return;
       }

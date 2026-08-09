@@ -110,9 +110,6 @@ class _Electronics2State extends State<Electronics2> {
               })
               .toList();
     }
-    if (_filterTags.contains('Negotiable')) {
-      list = list.where((e) => e.negotiation == 1).toList();
-    }
     switch (_sortKey) {
       case 'price_asc':
         list.sort(
@@ -237,7 +234,7 @@ class _Electronics2State extends State<Electronics2> {
   }
 
   void _openFilter() {
-    const options = ['Delivery available', 'Negotiable'];
+    const options = ['Delivery available'];
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
@@ -329,8 +326,7 @@ class _Electronics2State extends State<Electronics2> {
         AppUrl.baseUrlM + (item.image ?? ''),
         item.specifications,
         item.userId,
-        item.serviceAgreements,
-        item.isMessage,
+        item.description,
         item.delivery_charges,
       ),
     );
@@ -510,7 +506,7 @@ class _Electronics2State extends State<Electronics2> {
           prefixIcon: Padding(
             padding: const EdgeInsets.all(12.0),
             child: Image.asset(
-              'assets/slicing/searchnew.png',
+              'assets/images/searchnew.png',
               width: 20,
               height: 20,
               fit: BoxFit.contain,

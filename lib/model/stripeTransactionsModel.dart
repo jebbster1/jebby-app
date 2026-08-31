@@ -1,3 +1,5 @@
+import '../utils/api_datetime.dart';
+
 class StripeTransactionsModel {
   List<StripeTransactionData>? data;
   String? message;
@@ -37,7 +39,7 @@ class StripeTransactionData {
   String? productName;
   int? orderId;
   int? totalPrice;
-  int? orderStatus;
+  String? orderStatus;
   String? createdAt;
 
   StripeTransactionData({
@@ -59,14 +61,16 @@ class StripeTransactionData {
     amount = json['amount']?.toDouble();
     currency = json['currency'];
     status = json['status'];
-    created = json['created'] != null ? DateTime.parse(json['created']) : null;
+    created = json['created'] != null
+        ? parseApiDateTime(json['created'].toString())
+        : null;
     paymentMethodTypes = json['payment_method_types'] != null 
         ? List<String>.from(json['payment_method_types'])
         : null;
     productName = json['product_name'];
     orderId = json['order_id'];
     totalPrice = json['total_price'];
-    orderStatus = json['order_status'];
+    orderStatus = json['order_status']?.toString();
     createdAt = json['created_at'];
   }
 

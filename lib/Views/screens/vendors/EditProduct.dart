@@ -27,6 +27,8 @@ import 'package:jebby/utils/google_places_address.dart';
 import 'package:jebby/utils/product_upload_filename.dart';
 import 'package:jebby/utils/show_snackbar.dart';
 import '../../../view_model/user_view_model.dart';
+import '../../widgets/transport_options_section.dart';
+import '../../../model/handoff_window.dart';
 
 class EditProductScreen extends StatefulWidget {
   final dynamic category_id;
@@ -62,7 +64,9 @@ class _EditProductScreenState extends State<EditProductScreen> {
   bool product_update_button = false;
   bool img_button = false;
   bool imgLoader = false;
-  int _groupValue = -1;
+  bool _offersPickup = true;
+  bool _offersDelivery = false;
+  List<HandoffWindow> _handoffWindows = [];
   String dropdownValue = 'One';
   bool switchnot = true;
   bool catLoader = true;
@@ -103,6 +107,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
   TextEditingController rentPriceController = TextEditingController();
   TextEditingController deliverychargesController = TextEditingController();
   TextEditingController SecurityDepositeController = TextEditingController();
+  final TextEditingController _deliveryRadiusController = TextEditingController();
 
   var pasd =
       ApiRepository.shared.getProductsByIdList?.data![0].availableFrom.toString();
@@ -110,8 +115,6 @@ class _EditProductScreenState extends State<EditProductScreen> {
       ApiRepository.shared.getProductsByIdList?.data![0].availableTo.toString();
   DateTime _calendarMonth = DateTime(DateTime.now().year, DateTime.now().month);
   bool _isSelectingEnd = false;
-  var isDelivery =
-      ApiRepository.shared.getProductsByIdList?.data![0].isDelivery.toString();
 
   var security_deposit =
       ApiRepository.shared.getProductsByIdList?.data![0].security_deposit
@@ -304,8 +307,13 @@ class _EditProductScreenState extends State<EditProductScreen> {
     pasd =
         ApiRepository.shared.getProductsByIdList?.data![0].availableFrom.toString();
     paed = ApiRepository.shared.getProductsByIdList?.data![0].availableTo.toString();
-    isDelivery =
-        ApiRepository.shared.getProductsByIdList?.data![0].isDelivery.toString();
+    final productData = ApiRepository.shared.getProductsByIdList?.data![0];
+    final transport = productData?.transport;
+    _offersPickup = transport?.pickup ?? productData?.hasPickup ?? true;
+    _offersDelivery = transport?.delivery ?? productData?.hasDelivery ?? false;
+    _handoffWindows = transport?.handoffWindows ?? [];
+    _deliveryRadiusController.text =
+        transport?.deliveryRadiusMiles?.toString() ?? '';
 
     nameController.text = widget.name;
     specsController.text = widget.specifications;
@@ -313,8 +321,6 @@ class _EditProductScreenState extends State<EditProductScreen> {
     rentPriceController.text = widget.price.toString();
     selected_id = widget.category_id.toString();
     selected_sub_id = widget.sub_category_id.toString();
-    _groupValue =
-        (ApiRepository.shared.getProductsByIdList?.data![0].isDelivery == 1) ? 1 : 0;
     deliverychargesController.text = widget.delivery_charges;
     SecurityDepositeController.text = security_deposit.toString();
     final data0 = ApiRepository.shared.getProductsByIdList?.data?[0];
@@ -454,6 +460,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
   @override
   void dispose() {
     _locationController.dispose();
+    _deliveryRadiusController.dispose();
     super.dispose();
   }
 
@@ -977,8 +984,30 @@ class _EditProductScreenState extends State<EditProductScreen> {
       setState(() => product_update_button = false);
       return;
     }
-    if (!_isValidIntPrice(deliverychargesController.text, required: true)) {
+    if (_offersDelivery &&
+        !_isValidIntPrice(deliverychargesController.text, required: true)) {
       _showError('Please enter a valid delivery fee');
+      setState(() => product_update_button = false);
+      return;
+    }
+
+    if (!_offersPickup && !_offersDelivery) {
+      _showError('Enable pickup and/or delivery');
+      setState(() => product_update_button = false);
+      return;
+    }
+
+    if (_offersDelivery) {
+      final radius = int.tryParse(_deliveryRadiusController.text.trim());
+      if (radius == null || radius <= 0) {
+        _showError('Please enter a delivery radius (miles)');
+        setState(() => product_update_button = false);
+        return;
+      }
+    }
+
+    if (_handoffWindows.isEmpty) {
+      _showError('Please add at least one handoff window');
       setState(() => product_update_button = false);
       return;
     }
@@ -1000,14 +1029,13 @@ class _EditProductScreenState extends State<EditProductScreen> {
         nameController.text.toString().isNotEmpty &&
         rentPriceController.text.toString().isNotEmpty &&
         SecurityDepositeController.text.isNotEmpty &&
-        deliverychargesController.text.toString().isNotEmpty &&
+        (!_offersDelivery || deliverychargesController.text.toString().isNotEmpty) &&
         specsController.text.toString().isNotEmpty &&
         descriptionController.text.toString().isNotEmpty &&
         widget.product_id != null &&
         widget.product_id != null &&
         id != null &&
         selected_sub_id != null &&
-        isDelivery != null &&
         pasd != null &&
         paed != null
     ) {
@@ -1040,7 +1068,8 @@ class _EditProductScreenState extends State<EditProductScreen> {
         widget.product_id,
         widget.product_id,
         id,
-        isDelivery == "1" ? 1 : 0,
+        _offersPickup ? 1 : 0,
+        _offersDelivery ? 1 : 0,
         pasd,
         paed,
         deliverychargesController.text.toString(),
@@ -1048,6 +1077,8 @@ class _EditProductScreenState extends State<EditProductScreen> {
         _locationController.text.trim(),
         locationLat ?? "",
         locationLng ?? "",
+        _handoffWindows,
+        _deliveryRadiusController.text.trim(),
       );
     } else {
       _showError("Fields can't be empty");
@@ -1822,99 +1853,21 @@ class _EditProductScreenState extends State<EditProductScreen> {
 
             SizedBox(height: 20),
 
-            Row(
-              children: [
-                Text(
-                  "Delivery Type",
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                    color: Colors.black,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 10),
-
-            // DELIVERY TYPE (Free Pickup / Location based)
-            Container(
-              height: 52,
-              width: MediaQuery.of(context).size.width * 0.9,
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE9EAF2),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _groupValue = 0;
-                          isDelivery = "0";
-                        });
-                      },
-                      child: Container(
-                        height: 40,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color:
-                              _groupValue == 0
-                                  ? kprimaryColor
-                                  : Colors.transparent,
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Text(
-                          "Free Pickup",
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                _groupValue == 0
-                                    ? Colors.white
-                                    : const Color(0xFF0F172A),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _groupValue = 1;
-                          isDelivery = "1";
-                        });
-                      },
-                      child: Container(
-                        height: 40,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color:
-                              _groupValue == 1
-                                  ? kprimaryColor
-                                  : Colors.transparent,
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Text(
-                          "Delivery",
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                _groupValue == 1
-                                    ? Colors.white
-                                    : const Color(0xFF0F172A),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+            TransportOptionsSection(
+              pickupEnabled: _offersPickup,
+              deliveryEnabled: _offersDelivery,
+              deliveryFeeController: deliverychargesController,
+              radiusController: _deliveryRadiusController,
+              windows: _handoffWindows,
+              onPickupChanged: (value) => setState(() {
+                _offersPickup = value;
+                if (!value && !_offersDelivery) _offersDelivery = true;
+              }),
+              onDeliveryChanged: (value) => setState(() {
+                _offersDelivery = value;
+                if (!value && !_offersPickup) _offersPickup = true;
+              }),
+              onWindowsChanged: (windows) => setState(() => _handoffWindows = windows),
             ),
 
             SizedBox(height: 14),

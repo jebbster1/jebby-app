@@ -10,13 +10,13 @@ import 'package:jebby/Services/provider/sign_in_provider.dart';
 import 'package:jebby/Views/helper/colors.dart';
 import 'package:jebby/Views/screens/auth/register.dart';
 import 'package:jebby/res/color.dart';
-import 'package:jebby/utils/show_snackbar.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
 import '../../../utils/profile_image.dart';
+import '../../../utils/rental_date.dart';
 import '../../../view_model/apiServices.dart';
 import '../../../view_model/user_view_model.dart';
 import 'package:jebby/Services/analytics_service.dart';
@@ -25,8 +25,8 @@ import 'package:jebby/Services/analytics_service.dart';
 class CheckoutScreen extends StatefulWidget {
   var userId;
   var productID;
-  var rentStart;
-  var rentEnd;
+  var rentalStartDate;
+  var rentalEndDate;
   String vendorName;
   String vendorAddress;
   String cell;
@@ -46,13 +46,17 @@ class CheckoutScreen extends StatefulWidget {
   var security_deposit;
   var zipCode;
   var countryCode;
-  var is_delivery;
+  var pickupWindowBegin;
+  var pickupWindowEnd;
+  var returnWindowBegin;
+  var returnWindowEnd;
+  String transportType;
 
   CheckoutScreen(
     this.userId,
     this.productID,
-    this.rentStart,
-    this.rentEnd,
+    this.rentalStartDate,
+    this.rentalEndDate,
     this.vendorName,
     this.vendorAddress,
     this.cell,
@@ -71,9 +75,13 @@ class CheckoutScreen extends StatefulWidget {
     this.JebbyFee,
     this.security_deposit,
     this.zipCode,
-    this.countryCode,
-    this.is_delivery,
-  );
+    this.countryCode, {
+    this.pickupWindowBegin,
+    this.pickupWindowEnd,
+    this.returnWindowBegin,
+    this.returnWindowEnd,
+    this.transportType = 'pickup',
+  });
 
   @override
   State<CheckoutScreen> createState() => _CheckoutScreenState();
@@ -84,13 +92,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   /// Same palette as [ProductDetailScreen] for a consistent renter flow.
   static const Color _accent = Color(0xFFF6AE02);
-  static const Color _pageBg = Color(0xFFF3F3F5);
   static const Color _titleDark = Color(0xFF1B1B1F);
   static const Color _labelGrey = Color(0xFF72747A);
   static const Color _sheetInnerBg = Color(0xFFF7F7F9);
 
   final PageController _pageController = PageController();
   int _imageIndex = 0;
+  bool _checkoutLoading = false;
 
   DateTime selectedDate = DateTime.now();
   DateTime selectedDate1 = DateTime.now();
@@ -108,6 +116,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   /// Safe int from messy money strings (empty → 0, no FormatException).
   int _digits(dynamic v) =>
       int.tryParse('${v ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+  bool get _usesDelivery => widget.transportType == 'delivery';
+
+  String _windowSummary(dynamic begin, dynamic end) {
+    final beginText = begin?.toString() ?? '';
+    final endText = end?.toString() ?? '';
+    if (beginText.isEmpty || endText.isEmpty) return 'Not selected';
+    String clock(String raw) {
+      final timePart = raw.contains(' ') ? raw.split(' ').last : raw;
+      final parts = timePart.split(':');
+      if (parts.length < 2) return timePart;
+      final hour = int.tryParse(parts[0]) ?? 0;
+      final minute = parts[1];
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final hour12 = hour % 12 == 0 ? 12 : hour % 12;
+      return '$hour12:${minute.padLeft(2, '0')} $period';
+    }
+
+    final datePart = beginText.contains(' ') ? beginText.split(' ').first : widget.rentalStartDate?.toString() ?? '';
+    return '$datePart ${clock(beginText)} - ${clock(endText)}';
+  }
 
   Future<void> getSalesTax() async {
     String apiKey = dotenv.env['apiKey'] ?? 'No secret key found';
@@ -140,10 +169,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     profileData(context);
     emailController.text = widget.email;
     _locationController.text = widget.location;
-    selectedDate = DateTime.parse(widget.rentStart);
-    selectedDate1 = DateTime.parse(widget.rentEnd);
+    selectedDate = rentalDateToDateTime(widget.rentalStartDate?.toString()) ?? DateTime.now();
+    selectedDate1 = rentalDateToDateTime(widget.rentalEndDate?.toString()) ?? DateTime.now();
     diff = selectedDate1.difference(selectedDate).inDays;
-    dc = widget.is_delivery == 1 ? _digits(widget.delivery_charges) : 0;
+    dc = _usesDelivery ? _digits(widget.delivery_charges) : 0;
     Jebby = _digits(widget.JebbyFee);
   }
 
@@ -228,50 +257,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         (sub * taxValue);
   }
 
-  void _onCheckoutPressed() {
-    final dayCount = selectedDate1.difference(selectedDate).inDays;
-    final JebbyFees = ((widget.price * (dayCount + 1)) * Jebby / 100);
-    final Totaltax = (widget.price * (dayCount + 1)) * taxValue;
-    final ApplicationFees = JebbyFees + Totaltax;
+  Future<void> _onCheckoutPressed() async {
+    if (_checkoutLoading) return;
 
-    if (!termscontroller.termsValue.value) {
-      showAppErrorSnackbar(
-        'You must agree to Terms of Service and Privacy Policy',
-        title: 'Required',
-      );
-    } else {
+    setState(() => _checkoutLoading = true);
+    try {
       AnalyticsService.instance.track(
-        'checkout_started',
+        'booking_requested',
         props: {
           'product_id': widget.productID,
           'user_id': widget.userId,
         },
       );
-      ApiRepository.shared.stripePayment(
-        num.tryParse(
-              (((widget.price * (dayCount + 1)) +
-                          dc +
-                          ((widget.price * (dayCount + 1)) * Jebby / 100) +
-                          _digits(widget.security_deposit)) +
-                      ((widget.price * (dayCount + 1)) * taxValue))
-                  .toStringAsFixed(2),
-            ) ??
-            0,
-        widget.vendorAccountId.toString(),
+      await ApiRepository.shared.postOrder(
         context,
         widget.userId,
         widget.productID,
-        widget.rentStart,
-        widget.rentEnd,
-        widget.userName,
-        widget.email,
+        widget.rentalStartDate,
+        widget.rentalEndDate,
         widget.location,
         widget.lat,
         widget.long,
-        '',
         widget.security_deposit.toString(),
-        ApplicationFees,
+        transportType: widget.transportType,
+        transportFee: dc,
+        pickupWindowBegin: widget.pickupWindowBegin?.toString(),
+        pickupWindowEnd: widget.pickupWindowEnd?.toString(),
+        returnWindowBegin: widget.returnWindowBegin?.toString(),
+        returnWindowEnd: widget.returnWindowEnd?.toString(),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _checkoutLoading = false);
+      }
     }
   }
 
@@ -470,7 +488,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _buildCheckoutSheet() {
+  Widget _buildCheckoutSheet({required double bottomInset}) {
     final list = ApiRepository.shared.getProductsByIdList;
     final productName =
         (list?.data != null && list!.data!.isNotEmpty)
@@ -484,7 +502,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 28, 20, 32),
+        padding: EdgeInsets.fromLTRB(20, 28, 20, 20 + bottomInset),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -496,7 +514,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.is_delivery == 1 ? 'Delivery address' : 'Pickup location',
+                    _usesDelivery ? 'Delivery address' : 'Pickup location',
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -522,6 +540,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 children: [
                   _summaryRow('Rental price', '\$${widget.price} / day'),
                   _divider(),
+                  _summaryRow(
+                    'Pickup or delivery',
+                    _usesDelivery ? 'Delivery & Retrieval' : 'Pickup & Return',
+                  ),
+                  _divider(),
+                  _summaryRow('Pickup window', _windowSummary(widget.pickupWindowBegin, widget.pickupWindowEnd)),
+                  _divider(),
+                  _summaryRow('Return window', _windowSummary(widget.returnWindowBegin, widget.returnWindowEnd)),
+                  _divider(),
                   _summaryRow('Renting total', '\$${_rentalSubtotal()}'),
                   _divider(),
                   _summaryRow('Jebby fees', '\$${_jebbyFeesAmount()}'),
@@ -530,10 +557,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     'Security deposit',
                     '\$${widget.security_deposit}',
                   ),
-                  if (widget.is_delivery == 1) ...[
+                  if (_usesDelivery) ...[
                     _divider(),
                     _summaryRow(
-                      'Delivery',
+                      'Transport fee',
                       '\$${widget.delivery_charges == '' ? 0 : widget.delivery_charges}',
                     ),
                   ],
@@ -569,63 +596,81 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            Obx(
-              () => Theme(
-                data: Theme.of(context).copyWith(
-                  checkboxTheme: CheckboxThemeData(
-                    fillColor: WidgetStateProperty.resolveWith((states) {
-                      if (states.contains(WidgetState.selected)) {
-                        return kprimaryColor;
-                      }
-                      return null;
-                    }),
-                  ),
-                ),
-                child: Material(
-                  color: _sheetInnerBg,
-                  borderRadius: BorderRadius.circular(16),
-                  child: CheckboxListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    title: Text(
-                      'I agree to the Terms of Service and Privacy Policy',
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        height: 1.35,
-                        color: _titleDark,
+            Obx(() {
+              final termsAccepted = termscontroller.termsValue.value;
+              final canCheckout = termsAccepted && !_checkoutLoading;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Theme(
+                    data: Theme.of(context).copyWith(
+                      checkboxTheme: CheckboxThemeData(
+                        fillColor: WidgetStateProperty.resolveWith((states) {
+                          if (states.contains(WidgetState.selected)) {
+                            return kprimaryColor;
+                          }
+                          return null;
+                        }),
                       ),
                     ),
-                    value: termscontroller.termsValue.value,
-                    onChanged: (v) {
-                      termscontroller.chanegValue(v ?? false);
-                    },
-                    controlAffinity: ListTileControlAffinity.leading,
+                    child: Material(
+                      color: _sheetInnerBg,
+                      borderRadius: BorderRadius.circular(16),
+                      child: CheckboxListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        title: Text(
+                          'I agree to the Terms of Service and Privacy Policy',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            height: 1.35,
+                            color: _titleDark,
+                          ),
+                        ),
+                        value: termsAccepted,
+                        onChanged: (v) {
+                          termscontroller.chanegValue(v ?? false);
+                        },
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: kprimaryColor,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kprimaryColor,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.grey.shade300,
+                        disabledForegroundColor: Colors.grey.shade600,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: canCheckout ? _onCheckoutPressed : null,
+                      child: _checkoutLoading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text('Request booking', style: _ctaTextStyle()),
+                    ),
                   ),
-                ),
-                onPressed: _onCheckoutPressed,
-                child: Text('Checkout', style: _ctaTextStyle()),
-              ),
-            ),
+                ],
+              );
+            }),
           ],
         ),
       ),
@@ -638,17 +683,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
-      backgroundColor: _pageBg,
+      backgroundColor: Colors.white,
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _buildImageHeader(size)),
           SliverToBoxAdapter(
             child: Transform.translate(
               offset: const Offset(0, -22),
-              child: _buildCheckoutSheet(),
+              child: _buildCheckoutSheet(bottomInset: bottomInset),
             ),
           ),
-          SliverToBoxAdapter(child: SizedBox(height: 12 + bottomInset)),
         ],
       ),
     );

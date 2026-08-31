@@ -16,6 +16,7 @@ import '../../../view_model/user_view_model.dart';
 import '../../../model/getAllMessagesModel.dart' as msg_model;
 import '../../../model/getChatHistoryModel.dart' as datamodel;
 import '../../../model/product_chat_context.dart';
+import '../../../utils/api_datetime.dart';
 
 class _CachedThreadInquiry {
   const _CachedThreadInquiry({
@@ -199,8 +200,8 @@ class _MessagesScreenState extends State<MessagesScreen>
 
     final sorted = List<msg_model.Data>.from(messages);
     sorted.sort((a, b) {
-      final ta = DateTime.tryParse(a.timeSent ?? '') ?? DateTime(1970);
-      final tb = DateTime.tryParse(b.timeSent ?? '') ?? DateTime(1970);
+      final ta = parseApiDateTime(a.createdAt) ?? DateTime(1970);
+      final tb = parseApiDateTime(b.createdAt) ?? DateTime(1970);
       return ta.compareTo(tb);
     });
 

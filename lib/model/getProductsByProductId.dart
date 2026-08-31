@@ -1,3 +1,6 @@
+import 'transport_options.dart';
+import '../utils/rental_date.dart';
+
 class GetProductsByProductId {
   int? status;
   List<Data>? data;
@@ -41,7 +44,8 @@ class Data {
   String? stars;
   String? length;
   int? productId;
-  int? isDelivery;
+  int? offersPickup;
+  int? offersDelivery;
   String? availableFrom;
   String? availableTo;
   String? address;
@@ -50,6 +54,8 @@ class Data {
   int? security_deposit;
   List<Images>? images;
   String? delivery_charges;
+  TransportOptions? transport;
+  List<RentalWindow> bookedDates = [];
 
   Data({
     this.id,
@@ -65,7 +71,8 @@ class Data {
     this.stars,
     this.length,
     this.productId,
-    this.isDelivery,
+    this.offersPickup,
+    this.offersDelivery,
     this.availableFrom,
     this.availableTo,
     this.address,
@@ -90,7 +97,12 @@ class Data {
     stars = json['stars'];
     length = json['length'];
     productId = json['product_id'];
-    isDelivery = json['is_delivery'];
+    offersPickup = json['offers_pickup'] is bool
+        ? (json['offers_pickup'] ? 1 : 0)
+        : json['offers_pickup'];
+    offersDelivery = json['offers_delivery'] is bool
+        ? (json['offers_delivery'] ? 1 : 0)
+        : json['offers_delivery'];
     availableFrom = json['available_from'];
     availableTo = json['available_to'];
     address = json['address']?.toString();
@@ -114,7 +126,45 @@ class Data {
       }
     }
     delivery_charges = json['delivery_charges']?.toString();
+    transport = json['transport'] != null
+        ? TransportOptions.fromJson(
+            json['transport'] is Map<String, dynamic>
+                ? json['transport']
+                : Map<String, dynamic>.from(json['transport']),
+          )
+        : TransportOptions(
+            pickup: offersPickup == 1 || offersPickup == true,
+            delivery: offersDelivery == 1 || offersDelivery == true,
+            deliveryRadiusMiles: json['delivery_radius_miles'] is int
+                ? json['delivery_radius_miles']
+                : int.tryParse('${json['delivery_radius_miles']}'),
+            deliveryCharges: json['delivery_charges']?.toString(),
+          );
+    final rawBooked = json['booked_dates'];
+    if (rawBooked is List) {
+      bookedDates = rawBooked
+          .whereType<Map>()
+          .map((item) {
+            final map = Map<String, dynamic>.from(item);
+            return RentalWindow(
+              orderId: map['order_id'] is int
+                  ? map['order_id']
+                  : int.tryParse('${map['order_id']}') ?? 0,
+              startDate: map['rental_start_date']?.toString(),
+              endDate: map['rental_end_date']?.toString(),
+            );
+          })
+          .where((window) =>
+              window.startDate != null &&
+              window.endDate != null &&
+              window.startDate!.isNotEmpty &&
+              window.endDate!.isNotEmpty)
+          .toList();
+    }
   }
+
+  bool get hasPickup => transport?.pickup ?? offersPickup == 1;
+  bool get hasDelivery => transport?.delivery ?? offersDelivery == 1;
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = new Map<String, dynamic>();
@@ -131,7 +181,8 @@ class Data {
     data['stars'] = this.stars;
     data['length'] = this.length;
     data['product_id'] = this.productId;
-    data['is_delivery'] = this.isDelivery;
+    data['offers_pickup'] = this.offersPickup;
+    data['offers_delivery'] = this.offersDelivery;
     data['available_from'] = this.availableFrom;
     data['available_to'] = this.availableTo;
     data['address'] = this.address;

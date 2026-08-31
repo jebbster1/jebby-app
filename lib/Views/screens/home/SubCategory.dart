@@ -7,6 +7,7 @@ import 'package:jebby/Views/screens/home/ProductDetails.dart';
 
 import '../../../model/products_model.dart' as pm;
 import '../../../res/app_url.dart';
+import '../../../utils/api_datetime.dart';
 import 'package:jebby/res/color.dart';
 
 class Electronics2 extends StatefulWidget {
@@ -150,7 +151,7 @@ class _Electronics2State extends State<Electronics2> {
   bool _isNew(pm.Data item) {
     final raw = item.createdAt?.toString();
     if (raw == null || raw.isEmpty) return false;
-    final d = DateTime.tryParse(raw);
+    final d = parseApiDateTime(raw);
     if (d == null) return false;
     return DateTime.now().difference(d).inDays <= 14;
   }

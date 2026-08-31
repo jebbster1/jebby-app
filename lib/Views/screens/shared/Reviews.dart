@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/utils/profile_image.dart';
+import 'package:jebby/utils/api_datetime.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/view_model/apiServices.dart';
 
@@ -239,8 +239,8 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
                                 ),
                                 itemBuilder: (context, int index) {
                                   final data = reviews[index];
-                                  final date = DateFormat('yyyy-MM-dd').format(
-                                    DateTime.parse(data.createdAt.toString()),
+                                  final date = formatApiDate(
+                                    data.createdAt?.toString(),
                                   );
                                   final stars = data.stars;
                                   final desc = data.description.toString();

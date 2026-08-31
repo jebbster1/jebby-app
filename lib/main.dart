@@ -22,6 +22,7 @@ import 'package:provider/provider.dart';
 import 'provider/get_products_provider.dart';
 import 'view_model/services/splash_services.dart';
 import 'view_model/user_view_model.dart';
+import 'view_model/reservation_view_model.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'Services/fcm_service.dart';
 
@@ -74,6 +75,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider<ProDetailProvider>(
           create: (context) => ProDetailProvider(),
         ),
+        ChangeNotifierProvider(create: (_) => ReservationViewModel()),
       ],
       child: GetMaterialApp(
         debugShowCheckedModeBanner: false,

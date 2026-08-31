@@ -9,7 +9,7 @@ import 'package:jebby/Views/screens/onboarding/start_earning_intro.dart';
 import 'package:jebby/Views/screens/onboarding/verify_identity_screen.dart';
 import 'package:jebby/model/onboarding_state.dart';
 import 'package:jebby/model/provider_onboarding_data.dart';
-import 'package:jebby/respository/auth_repository.dart';
+import 'package:jebby/repository/auth_repository.dart';
 import 'package:jebby/view_model/apiServices.dart';
 import 'package:jebby/view_model/user_view_model.dart';
 import 'package:jebby/Services/analytics_service.dart';

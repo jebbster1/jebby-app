@@ -11,7 +11,9 @@ import 'package:jebby/view_model/user_view_model.dart';
 import 'package:jebby/Views/screens/shared/Chat.dart';
 import 'package:jebby/Views/screens/profile/userprofile.dart';
 import 'package:jebby/utils/profile_image.dart';
+import 'package:jebby/utils/api_datetime.dart';
 import 'package:jebby/Views/screens/vendors/MyOrders.dart';
+import 'package:jebby/Views/screens/reservations/reservation_detail_screen.dart';
 import 'package:jebby/res/color.dart';
 import 'package:provider/provider.dart';
 
@@ -82,7 +84,35 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   List<Data> _visibleItems(List<Data> raw) {
     if (widget.isVendor) return raw;
-    return raw.where((e) => e.name != "order").toList();
+    return raw.where((e) {
+      final name = (e.name ?? '').toString().toLowerCase();
+      return name != 'order';
+    }).toList();
+  }
+
+  String _notificationTitle(String? name) {
+    final normalized = (name ?? '').toString().trim().toLowerCase();
+    switch (normalized) {
+      case 'booking_requested':
+      case 'booking_request':
+        return 'Booking requested';
+      case 'booking_accepted':
+        return 'Booking accepted';
+      case 'booking_declined':
+        return 'Booking declined';
+      case 'booking_cancelled':
+        return 'Booking cancelled';
+      case 'payment_confirmed':
+        return 'Payment confirmed';
+      case 'return_window_open':
+        return 'Return window open';
+      case 'dispute_reported':
+        return 'Dispute reported';
+      case 'payout_released':
+        return 'Payout released';
+      default:
+        return name?.capitalizeFirst ?? '';
+    }
   }
 
   String _sectionLabel(DateTime date) {
@@ -101,9 +131,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final Map<String, List<Data>> grouped = {};
     for (final item in visible) {
-      final createdAtRaw = item.createdAt?.toString();
       final createdAt =
-          DateTime.tryParse(createdAtRaw ?? '') ?? DateTime.now();
+          parseApiDateTime(item.createdAt?.toString()) ?? DateTime.now();
       final key = _sectionLabel(createdAt);
       grouped.putIfAbsent(key, () => []);
       grouped[key]!.add(item);
@@ -152,9 +181,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final id = data.id;
     _seenNotification(id);
 
+    final orderId = data.orderId;
+    if (orderId != null) {
+      Get.to(() => ReservationDetailScreen(orderId: orderId));
+      return;
+    }
+
     if (name == "message") {
       Get.to(() => MessagesScreen());
     } else if (name == "order" && widget.isVendor) {
+      Get.to(() => OrderRequestScreen());
+    } else if ((name == 'booking_request' || name == 'booking_requested') && widget.isVendor) {
       Get.to(() => OrderRequestScreen());
     }
   }
@@ -163,9 +200,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final name = (data.name ?? '').toString();
     final desc = (data.description ?? '').toString();
     final seen = data.seen.toString();
-    final date = data.createdAt?.toString() ?? '';
-    final formattedDate = DateFormat('hh:mm a')
-        .format(DateTime.tryParse(date) ?? DateTime.now());
+    final formattedDate = formatApiTime(data.createdAt?.toString());
 
     return InkWell(
       onTap: () => _onNotificationTap(data),
@@ -197,7 +232,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              name.capitalizeFirst ?? '',
+                              _notificationTitle(name),
                               style: TextStyle(
                                 fontSize: 31 / 2,
                                 fontWeight: FontWeight.w700,

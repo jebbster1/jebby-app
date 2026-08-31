@@ -10,7 +10,7 @@ import 'package:jebby/Views/screens/auth/login.dart';
 import 'package:jebby/Views/screens/profile/userprofile.dart';
 import 'package:jebby/Views/screens/vendors/vendorhome.dart';
 import 'package:jebby/model/user_model.dart';
-import 'package:jebby/respository/auth_repository.dart';
+import 'package:jebby/repository/auth_repository.dart';
 import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/view_model/user_view_model.dart';
 import 'package:provider/provider.dart';

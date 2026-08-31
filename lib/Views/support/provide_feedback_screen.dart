@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Views/widgets/cms_page_shell.dart';
 import 'package:jebby/res/color.dart';
-import 'package:jebby/respository/auth_repository.dart';
+import 'package:jebby/repository/auth_repository.dart';
 import 'package:jebby/utils/show_snackbar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

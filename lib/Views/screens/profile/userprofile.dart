@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:jebby/utils/api_headers.dart';
+import 'package:jebby/utils/api_datetime.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/utils/profile_image.dart';
 
@@ -106,6 +107,7 @@ class _RenterProfileState extends State<RenterProfile> {
           if (mounted) setState(() => ordersCount = list.data?.length ?? 0);
         },
         (e) {},
+        updateCache: widget.vendorID == null,
       );
     });
   }
@@ -181,7 +183,7 @@ class _RenterProfileState extends State<RenterProfile> {
 
   static String _timeAgo(String? createdAt) {
     if (createdAt == null || createdAt.isEmpty) return '';
-    final d = DateTime.tryParse(createdAt);
+    final d = parseApiDateTime(createdAt);
     if (d == null) return '';
     final now = DateTime.now();
     final diff = now.difference(d);

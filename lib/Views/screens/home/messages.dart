@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../../Services/provider/sign_in_provider.dart';
@@ -14,6 +13,7 @@ import '../../../model/product_chat_context.dart';
 import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
 import '../../../res/color.dart';
+import '../../../utils/api_datetime.dart';
 import '../../../view_model/apiServices.dart';
 import '../../../view_model/user_view_model.dart';
 import 'ProductDetails.dart';
@@ -251,8 +251,8 @@ class _ChatState extends State<Chat> {
     if (raw == null || raw.isEmpty) return [];
     final list = List<msg_model.Data>.from(raw);
     list.sort((a, b) {
-      final ta = DateTime.tryParse(a.timeSent ?? '') ?? DateTime(1970);
-      final tb = DateTime.tryParse(b.timeSent ?? '') ?? DateTime(1970);
+      final ta = parseApiDateTime(a.createdAt) ?? DateTime(1970);
+      final tb = parseApiDateTime(b.createdAt) ?? DateTime(1970);
       return ta.compareTo(tb);
     });
     return list;
@@ -262,7 +262,7 @@ class _ChatState extends State<Chat> {
     final sorted = _sortMessagesChronological(data);
     if (sorted.isEmpty) return 'empty';
     final last = sorted.last;
-    return '${sorted.length}_${last.id}_${last.timeSent}_${last.content}';
+    return '${sorted.length}_${last.id}_${last.createdAt}_${last.content}';
   }
 
   /// With [reverse: true], offset 0 is the visual bottom (newest).
@@ -366,7 +366,7 @@ class _ChatState extends State<Chat> {
                               productCtx != null
                                   ? _ProductInquiryCard(
                                     product: productCtx,
-                                    timeSent: m.timeSent,
+                                    createdAt: m.createdAt,
                                     isMe: isMe,
                                     showSenderHeader: showSenderHeader,
                                     senderLabel:
@@ -376,7 +376,7 @@ class _ChatState extends State<Chat> {
                                   )
                                   : _MessageRow(
                                     content: content,
-                                    timeSent: m.timeSent,
+                                    createdAt: m.createdAt,
                                     isMe: isMe,
                                     showSenderHeader: showSenderHeader,
                                     senderLabel:
@@ -436,14 +436,14 @@ class _EmptyThreadBody extends StatelessWidget {
 class _ProductInquiryCard extends StatelessWidget {
   const _ProductInquiryCard({
     required this.product,
-    this.timeSent,
+    this.createdAt,
     required this.isMe,
     required this.showSenderHeader,
     required this.senderLabel,
   });
 
   final ProductChatContext product;
-  final String? timeSent;
+  final String? createdAt;
   final bool isMe;
   final bool showSenderHeader;
   final String senderLabel;
@@ -476,8 +476,7 @@ class _ProductInquiryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final maxW = MediaQuery.sizeOf(context).width * 0.88;
-    final time = DateTime.tryParse(timeSent ?? '');
-    final timeStr = time != null ? DateFormat('hh:mm a').format(time) : '';
+    final timeStr = formatApiTime(createdAt);
     final imageUrl = _resolveImageUrl();
 
     final card = Material(
@@ -628,14 +627,14 @@ class _HeaderAvatar extends StatelessWidget {
 class _MessageRow extends StatelessWidget {
   const _MessageRow({
     required this.content,
-    required this.timeSent,
+    required this.createdAt,
     required this.isMe,
     required this.showSenderHeader,
     required this.senderLabel,
   });
 
   final String content;
-  final String? timeSent;
+  final String? createdAt;
   final bool isMe;
   final bool showSenderHeader;
   final String senderLabel;
@@ -643,8 +642,7 @@ class _MessageRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final maxW = MediaQuery.sizeOf(context).width * 0.78;
-    final time = DateTime.tryParse(timeSent ?? '');
-    final timeStr = time != null ? DateFormat('hh:mm a').format(time) : '';
+    final timeStr = formatApiTime(createdAt);
 
     final bubble = Container(
       constraints: BoxConstraints(maxWidth: maxW),
@@ -772,7 +770,7 @@ class _Composer extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     child: Image.asset(
-                      'assets/newpacks/chatsendicon.png',
+                      'assets/images/chatsendicon.png',
                       height: 40,
                       width: 40,
                     ),

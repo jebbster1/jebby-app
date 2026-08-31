@@ -1,3 +1,6 @@
+import '../utils/order_status.dart';
+import '../utils/rental_date.dart';
+
 class GetAllOrdersByUserIdModel {
   List<Data>? data;
   String? message;
@@ -29,8 +32,8 @@ class Data {
   int? userId;
   int? productId;
   int? totalPrice;
-  String? rentStart;
-  String? originalReturn;
+  String? rentalStartDate;
+  String? rentalEndDate;
   String? name;
   String? email;
   String? location;
@@ -38,11 +41,9 @@ class Data {
   var longitude;
   String? createdAt;
   String? updatedAt;
-  int? status;
+  String? orderStatus;
+  String? completedAt;
   int? vendorId;
-  String? approveDate;
-  String? completeDate;
-  String? cancelDate;
   String? productName;
   String? productImage;
 
@@ -51,8 +52,8 @@ class Data {
     this.userId,
     this.productId,
     this.totalPrice,
-    this.rentStart,
-    this.originalReturn,
+    this.rentalStartDate,
+    this.rentalEndDate,
     this.name,
     this.email,
     this.location,
@@ -60,11 +61,9 @@ class Data {
     this.longitude,
     this.createdAt,
     this.updatedAt,
-    this.status,
+    this.orderStatus,
+    this.completedAt,
     this.vendorId,
-    this.approveDate,
-    this.completeDate,
-    this.cancelDate,
     this.productName,
     this.productImage,
   });
@@ -74,8 +73,8 @@ class Data {
     userId = json['user_id'];
     productId = json['product_id'];
     totalPrice = json['total_price'];
-    rentStart = json['rent_start'];
-    originalReturn = json['original_return'];
+    rentalStartDate = parseRentalDate(json['rental_start_date']);
+    rentalEndDate = parseRentalDate(json['rental_end_date']);
     name = json['name'];
     email = json['email'];
     location = json['location'];
@@ -83,11 +82,9 @@ class Data {
     longitude = json['longitude'];
     createdAt = json['created_at'];
     updatedAt = json['updated_at'];
-    status = json['status'];
+    orderStatus = OrderStatus.normalize(json['order_status']?.toString());
+    completedAt = json['completed_at']?.toString();
     vendorId = json['vendor_id'];
-    approveDate = json['approve_date'];
-    completeDate = json['complete_date'];
-    cancelDate = json['cancel_date'];
     productName = json['product_name'];
     productImage = json['product_image'];
   }
@@ -98,8 +95,8 @@ class Data {
     data['user_id'] = this.userId;
     data['product_id'] = this.productId;
     data['total_price'] = this.totalPrice;
-    data['rent_start'] = this.rentStart;
-    data['original_return'] = this.originalReturn;
+    data['rental_start_date'] = this.rentalStartDate;
+    data['rental_end_date'] = this.rentalEndDate;
     data['name'] = this.name;
     data['email'] = this.email;
     data['location'] = this.location;
@@ -107,11 +104,9 @@ class Data {
     data['longitude'] = this.longitude;
     data['created_at'] = this.createdAt;
     data['updated_at'] = this.updatedAt;
-    data['status'] = this.status;
+    data['order_status'] = this.orderStatus;
+    data['completed_at'] = this.completedAt;
     data['vendor_id'] = this.vendorId;
-    data['approve_date'] = this.approveDate;
-    data['complete_date'] = this.completeDate;
-    data['cancel_date'] = this.cancelDate;
     data['product_name'] = this.productName;
     data['product_image'] = this.productImage;
     return data;

@@ -17,11 +17,14 @@ import 'package:jebby/Views/screens/home/Messages.dart';
 import 'package:jebby/Views/screens/shared/Reviews.dart';
 
 import '../../../model/getProductsByProductId.dart';
+import '../../../model/handoff_window.dart';
 import '../../../model/getReviewsByProductId.dart' as review_model;
 import '../../../model/product_chat_context.dart';
 import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
 import '../../../utils/profile_image.dart';
+import '../../../utils/api_datetime.dart';
+import '../../../utils/rental_date.dart';
 import '../../../view_model/apiServices.dart';
 import '../../../view_model/user_view_model.dart';
 import 'package:jebby/res/color.dart';
@@ -94,12 +97,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// Product availability window (API: available_from / available_to).
   DateTime? _availStart;
   DateTime? _availEnd;
+  List<RentalWindow> _bookedDates = [];
   DateTime _calendarMonth = DateTime(DateTime.now().year, DateTime.now().month);
 
   String _listingAddress = '';
   String _listingLat = '';
   String _listingLng = '';
-  int _isDelivery = 0;
+  bool _offersPickup = true;
+  bool _offersDelivery = false;
   String _specificationsFromApi = '';
 
   bool get _isProductOwner =>
@@ -173,14 +178,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         final urls = _extractImageUrls(list);
         DateTime? a0;
         DateTime? a1;
+        var booked = <RentalWindow>[];
         if (list.data != null && list.data!.isNotEmpty) {
           final p = list.data!.first;
           a0 = _parseDateOnly(p.availableFrom);
           a1 = _parseDateOnly(p.availableTo);
+          booked = p.bookedDates;
           _listingAddress = p.address?.toString().trim() ?? '';
           _listingLat = p.latitude?.toString() ?? '';
           _listingLng = p.longitude?.toString() ?? '';
-          _isDelivery = p.isDelivery ?? 0;
+          _offersPickup = p.hasPickup;
+          _offersDelivery = p.hasDelivery;
           final specStr = p.specifications?.toString().trim() ?? '';
           _specificationsFromApi =
               specStr.isEmpty ? '' : specStr;
@@ -191,6 +199,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             _galleryLoading = false;
             _availStart = a0;
             _availEnd = a1;
+            _bookedDates = booked;
             // Always open on the current month — never jump to a past availability start month.
             _calendarMonth = DateTime(
               DateTime.now().year,
@@ -396,7 +405,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         product?.delivery_charges?.toString() ??
         widget.delivery_charges?.toString() ??
         '0';
-    final isDelivery = product?.isDelivery ?? _isDelivery;
+    final offersPickup = product?.hasPickup ?? _offersPickup;
+    final offersDelivery = product?.hasDelivery ?? _offersDelivery;
+    final handoffWindows = product?.transport?.handoffWindows ?? HandoffWindow.defaultSlots;
+    final deliveryRadiusMiles = product?.transport?.deliveryRadiusMiles;
 
     Get.to(
       () => RentnowScreen(
@@ -413,10 +425,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         "simple",
         deliveryCharges,
         securityDeposit,
-        isDelivery,
+        offersPickup,
+        offersDelivery,
         _listingAddress,
         _listingLat,
         _listingLng,
+        handoffWindows,
+        deliveryRadiusMiles,
       ),
     );
   }
@@ -487,7 +502,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   String _relativeTime(String? iso) {
     if (iso == null || iso.isEmpty) return '';
-    final d = DateTime.tryParse(iso);
+    final d = parseApiDateTime(iso);
     if (d == null) return '';
     final diff = DateTime.now().difference(d);
     if (diff.inDays >= 30) {
@@ -698,7 +713,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
               const SizedBox(height: 16),
               Text(
-                _isDelivery == 1 ? 'Delivery from' : 'Pickup location',
+                _offersDelivery && !_offersPickup
+                    ? 'Delivery from'
+                    : 'Pickup location',
                 style: GoogleFonts.inter(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
@@ -1123,6 +1140,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           label: 'Unavailable',
           outlined: true,
         ),
+        _legendDot(
+          fill: const Color(0xFFFFEBEE),
+          label: 'Active Rentals',
+          outlined: true,
+          outlineColor: const Color(0xFFE53935),
+        ),
       ],
     );
   }
@@ -1131,6 +1154,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     required Color fill,
     required String label,
     required bool outlined,
+    Color outlineColor = const Color(0xFFD0D0D6),
   }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1142,7 +1166,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             shape: BoxShape.circle,
             color: outlined ? Colors.transparent : fill,
             border: Border.all(
-              color: outlined ? const Color(0xFFD0D0D6) : fill,
+              color: outlined ? outlineColor : fill,
               width: 1.5,
             ),
           ),
@@ -1242,11 +1266,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     const double h = 30;
     final isPast = !outsideMonth && _isPastCalendarDay(day);
     final inWindow = !outsideMonth && _isInAvailability(day);
-    final showAvailableGrey = inWindow && !isPast;
+    final isBooked = !outsideMonth && isDayInBookedRange(day, _bookedDates);
+    final showAvailableGrey = inWindow && !isPast && !isBooked;
 
     Color textColor;
     if (outsideMonth) {
       textColor = const Color(0xFFD8D8DC);
+    } else if (isBooked) {
+      textColor = const Color(0xFFC62828);
     } else if (isPast) {
       textColor = const Color(0xFFB8B8BE);
     } else if (!inWindow) {
@@ -1264,7 +1291,26 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       ),
     );
 
-    if (showAvailableGrey) {
+    if (isBooked) {
+      inner = Container(
+        width: 26,
+        height: 26,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFFFFEBEE),
+          border: Border.all(color: const Color(0xFFE53935), width: 1.5),
+        ),
+        child: Text(
+          '${day.day}',
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFFC62828),
+          ),
+        ),
+      );
+    } else if (showAvailableGrey) {
       inner = Container(
         width: 26,
         height: 26,
@@ -1482,7 +1528,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                   // TODO: Renable when renters are ready
                   // onPressed: () => rentClicked(context),
-                  onPressed: null,
+                  onPressed: () => rentClicked(context),
                   child: Text(
                     'Rent Now',
                     style: GoogleFonts.inter(

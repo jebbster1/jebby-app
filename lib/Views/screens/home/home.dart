@@ -30,6 +30,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:jebby/Views/widgets/rentals_coming_soon_banner.dart';
+import 'package:jebby/Views/widgets/reservation_action_card.dart';
 import '../../../model/user_model.dart';
 import '../../../res/app_url.dart';
 
@@ -499,6 +500,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 SizedBox(height: res_height * 0.02),
                 RentalsComingSoonBanner(),
+                ReservationActionCard(),
                 SizedBox(height: res_height * 0.02),
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10),
@@ -840,6 +842,8 @@ class _HomeScreenState extends State<HomeScreen> {
     delivery_charges,
   }) {
     double res_height = MediaQuery.of(context).size.height;
+    final ratingValue = double.tryParse(rt?.toString() ?? '') ?? 0;
+    final showRatingBadge = ratingValue > 0;
 
     return GestureDetector(
       onTap: () {
@@ -908,34 +912,36 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
-                    // Rating badge (top-left)
-                    Positioned(
-                      top: 16,
-                      left: 16,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade700,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          children: [
-                            Image.asset('assets/images/star.png',width: 25,height: 25,),
-                            SizedBox(width: 6),
-                            Text(
-                              "$rt",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
+                    // Rating badge (top-left) — only when the listing has reviews
+                    if (showRatingBadge)
+                      Positioned(
+                        top: 16,
+                        left: 16,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade700,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.star, color: Color(0xFFF6AE02), size: 18),
+                              const SizedBox(width: 6),
+                              Text(
+                                rt.toString(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
 
                     // Price badge (top-right)
                     Positioned(

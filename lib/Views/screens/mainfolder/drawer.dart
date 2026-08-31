@@ -18,13 +18,11 @@ import 'package:jebby/Views/screens/auth/login.dart';
 import 'package:jebby/Views/screens/home/Favourites.dart';
 import 'package:jebby/Views/screens/home/MyOrders.dart';
 import 'package:jebby/Views/screens/home/MyTransactions.dart';
-import 'package:jebby/Views/screens/home/ReturnProduct.dart';
 import 'package:jebby/Views/screens/shared/Chat.dart';
 import 'package:jebby/Views/screens/mainfolder/homemain.dart';
 import 'package:jebby/Views/screens/profile/userprofile.dart';
 import 'package:jebby/Views/screens/shared/Setting.dart';
 import 'package:jebby/Views/screens/vendors/MyOrders.dart';
-import 'package:jebby/Views/screens/vendors/ReturnProduct.dart';
 import 'package:jebby/Views/screens/vendors/MyTransactions.dart';
 import 'package:jebby/Views/screens/vendors/vendorhome.dart';
 import 'package:jebby/Views/screens/onboarding/start_earning_button.dart';
@@ -32,7 +30,7 @@ import 'package:jebby/Views/widgets/role_switcher_card.dart';
 import 'package:jebby/utils/profile_image.dart';
 import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/Views/support/provide_feedback_screen.dart';
-import 'package:jebby/respository/auth_repository.dart';
+import 'package:jebby/repository/auth_repository.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -928,41 +926,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                           ),
                         ),
                       ),
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          Get.to(ProductReturnScreen());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/images/bag-tick.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Expanded(
-                                  child: Text(
-                                    "Return Product",
-                                    textAlign: TextAlign.left,
-                                    style: TextStyle(
-                                      fontSize: 15 * textScaleFactor,
-                                      color: Colors.black,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
                       SizedBox(height: 15),
                       ..._buildSupportFeedbackSection(
                         res_width,
@@ -1258,42 +1221,6 @@ class _DrawerScreenState extends State<DrawerScreen> {
                                 Expanded(
                                   child: Text(
                                     "My Wishlist",
-                                    textAlign: TextAlign.left,
-                                    style: TextStyle(
-                                      fontSize: 15 * textScaleFactor,
-                                      color: Colors.black,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(height: 25),
-                      GestureDetector(
-                        onTap: () {
-                          Get.to(() => ReturnProductScreen());
-                        },
-                        child: Container(
-                          width: res_width * 0.75,
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 5, left: 10),
-                            child: Row(
-                              children: [
-                                Image.asset(
-                                  'assets/images/bag-tick.png',
-                                  color: Colors.black,
-                                  width: 20,
-                                  height: 20,
-                                ),
-                                SizedBox(width: 20),
-                                Expanded(
-                                  child: Text(
-                                    "Return Product",
                                     textAlign: TextAlign.left,
                                     style: TextStyle(
                                       fontSize: 15 * textScaleFactor,

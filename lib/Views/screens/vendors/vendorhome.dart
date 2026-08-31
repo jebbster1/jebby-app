@@ -10,11 +10,13 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:jebby/utils/api_headers.dart';
+import 'package:jebby/utils/api_datetime.dart';
 import 'package:jebby/utils/profile_image.dart';
 import 'package:jebby/res/color.dart';
 import 'package:jebby/Views/screens/mainfolder/drawer.dart';
 import 'package:jebby/Views/screens/vendors/MyOrders.dart';
 import 'package:jebby/Views/screens/vendors/MyProducts.dart';
+import 'package:jebby/Views/widgets/reservation_action_card.dart';
 import 'package:jebby/Views/screens/shared/Notification.dart';
 import 'package:jebby/Views/screens/profile/userprofile.dart';
 import 'package:jebby/Views/screens/vendors/MyTransactions.dart';
@@ -22,6 +24,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../Services/provider/sign_in_provider.dart';
+import '../../../utils/order_status.dart';
 import '../../../model/user_model.dart';
 import '../../../view_model/apiServices.dart';
 import '../../../view_model/user_view_model.dart';
@@ -432,19 +435,12 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
   }
 
   String _formatTxnDate(String? raw) {
-    final parsed = DateTime.tryParse(raw ?? '');
+    final parsed = parseApiDateTime(raw);
     if (parsed == null) return 'Date unavailable';
     return '${_monthName(parsed.month)} ${parsed.day}, ${parsed.year}';
   }
 
-  String _formatNotiTime(String? raw) {
-    final parsed = DateTime.tryParse(raw ?? '');
-    if (parsed == null) return '';
-    final hour = parsed.hour % 12 == 0 ? 12 : parsed.hour % 12;
-    final minute = parsed.minute.toString().padLeft(2, '0');
-    final amPm = parsed.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $amPm';
-  }
+  String _formatNotiTime(String? raw) => formatApiTime(raw);
 
   List<Widget> _todaySectionChildren() {
     if (isTodayLoading) {
@@ -481,7 +477,7 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
     }
 
     final raw = ApiRepository.shared.getAllOrdersByVenodrIdList?.data ?? [];
-    final visible = raw.where((e) => e.cancelDate.toString().isEmpty).toList();
+    final visible = raw.where((e) => !OrderStatus.isTerminal(e.orderStatus)).toList();
     if (visible.isEmpty) {
       return [
         Padding(
@@ -1009,6 +1005,8 @@ class _VendrosHomeScreenState extends State<VendrosHomeScreen> {
 
                 /// PROFILE CARD
                 profileCard(),
+
+                const ReservationActionCard(),
 
                 SizedBox(height: 24),
 

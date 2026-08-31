@@ -3,14 +3,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
-import 'package:jebby/Views/screens/home/OrderConfirmation.dart';
-import 'package:jebby/Views/screens/home/TrackingDetail.dart';
+import 'package:jebby/Views/screens/home/ProductDetails.dart';
+import 'package:jebby/Views/screens/mainfolder/homemain.dart';
+import 'package:jebby/Views/screens/reservations/reservation_detail_screen.dart';
 import 'package:jebby/res/app_url.dart';
 import 'package:jebby/res/color.dart';
 import 'package:provider/provider.dart';
 
 import '../../../Services/provider/sign_in_provider.dart';
+import '../../../utils/order_status.dart';
+import '../../../utils/rental_date.dart';
+import '../../../utils/show_snackbar.dart';
 import '../../../model/getAllOrdersByUserIdModel.dart' as user_orders;
 import '../../../model/user_model.dart';
 import '../../../view_model/apiServices.dart';
@@ -24,7 +27,7 @@ class MyOrdersScreen extends StatefulWidget {
 }
 
 class _MyOrdersScreenState extends State<MyOrdersScreen> {
-  /// 0 = All, 1 = To Ship (status 1), 2 = Received (status 2)
+  /// 0 = All, 1 = Active (in-progress rentals), 2 = Completed
   int selectedTab = 0;
 
   static const Color _pageBg = Color(0xFFF3F3F5);
@@ -99,44 +102,14 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
     final all = _allOrders();
     if (selectedTab == 0) return all;
     if (selectedTab == 1) {
-      return all.where((e) => e.status == 1).toList();
+      return all.where((e) => OrderStatus.isRenterActive(e.orderStatus)).toList();
     }
-    return all.where((e) => e.status == 2).toList();
+    return all.where((e) => OrderStatus.isCompleted(e.orderStatus)).toList();
   }
 
-  String _formatExpectedArrival(String? raw) {
-    if (raw == null || raw.isEmpty) return '—';
-    try {
-      return DateFormat('d/M/yyyy').format(DateTime.parse(raw));
-    } catch (_) {
-      return raw;
-    }
-  }
+  String _formatExpectedArrival(String? raw) => formatRentalDateForDisplay(raw);
 
-  String _createdShort(user_orders.Data data) {
-    try {
-      return DateFormat('dd-MM-yy').format(DateTime.parse(data.createdAt.toString()));
-    } catch (_) {
-      return data.createdAt?.toString() ?? '';
-    }
-  }
-
-  String _statusBadgeLabel(int? status) {
-    switch (status) {
-      case 0:
-      case 1:
-        return 'PENDING';
-      case 2:
-        return 'RECEIVED';
-      default:
-        return 'CANCELLED';
-    }
-  }
-
-  double _parseCoord(dynamic v) {
-    if (v == null) return 0;
-    return double.tryParse(v.toString()) ?? 0;
-  }
+  String _statusBadgeLabel(String? status) => OrderStatus.renterBadgeLabel(status);
 
   String _imageUrl(String? path) {
     final p = path?.trim() ?? '';
@@ -147,35 +120,59 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
     return '$base$rel';
   }
 
-  void _openTrack(user_orders.Data data) {
-    Get.to(
-      () => TrackingDetailScreen(
-        date: data.rentStart.toString(),
-        vendorId: data.vendorId.toString(),
-        status: data.status.toString(),
-        created: _createdShort(data),
-        approve: data.approveDate.toString(),
-        complete: data.completeDate.toString(),
-        cancel: data.cancelDate.toString(),
-      ),
-    );
+  Future<void> _openReservation(user_orders.Data data) async {
+    final orderId = data.id;
+    if (orderId == null) return;
+    await Get.to(() => ReservationDetailScreen(orderId: orderId));
+    if (!mounted || sourceId.isEmpty) return;
+    getNewOrders();
   }
 
-  void _openReorder(user_orders.Data data) {
-    Get.to(
-      () => OrderConfirmationScreen(
-        image: data.productImage.toString(),
-        name: data.productName.toString(),
-        price: data.totalPrice.toString(),
-        orderId: data.id.toString(),
-        prodId: data.productId.toString(),
-        location: data.location.toString(),
-        long: _parseCoord(data.longitude),
-        lat: _parseCoord(data.latitude),
-        username: fullname,
-        userid: sourceId,
-        vendorID: data.vendorId.toString(),
-      ),
+  void _openRentAgain(user_orders.Data data) {
+    final productId = data.productId?.toString() ?? '';
+    if (productId.isEmpty) return;
+
+    ApiRepository.shared.getProductsById(
+      (list) {
+        final product =
+            list.data != null && list.data!.isNotEmpty ? list.data!.first : null;
+        if (product == null) {
+          showAppErrorSnackbar('This listing is no longer available.');
+          return;
+        }
+        if (!productHasFutureBookableDates(
+          product.availableFrom,
+          product.availableTo,
+        )) {
+          showAppErrorSnackbar(
+            'This listing is not available for future rental dates.',
+          );
+          return;
+        }
+
+        final imagePath = product.images?.isNotEmpty == true
+            ? product.images!.first.path
+            : data.productImage?.toString() ?? '';
+
+        Get.to(
+          () => ProductDetailScreen(
+            productId,
+            product.name ?? data.productName ?? 'Listing',
+            product.price ?? 0,
+            product.stars ?? '0',
+            imagePath,
+            product.specifications ?? '',
+            product.userId ?? data.vendorId,
+            product.description ?? '',
+            product.delivery_charges ?? 0,
+            sourceId: 'rent_again',
+          ),
+        );
+      },
+      (_) {
+        showAppErrorSnackbar('This listing is no longer available.');
+      },
+      productId,
     );
   }
 
@@ -187,6 +184,22 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
   }
 
   @override
+  void activate() {
+    super.activate();
+    if (sourceId.isNotEmpty) {
+      getNewOrders();
+    }
+  }
+
+  void _goBackFromMyOrders() {
+    if (Navigator.of(context).canPop()) {
+      Get.back();
+      return;
+    }
+    Get.offAll(() => const MainScreen());
+  }
+
+  @override
   Widget build(BuildContext context) {
     final textTheme = GoogleFonts.interTextTheme(
       Theme.of(context).textTheme.apply(
@@ -195,7 +208,12 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       ),
     );
 
-    return Theme(
+    return PopScope(
+      canPop: Navigator.of(context).canPop(),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goBackFromMyOrders();
+      },
+      child: Theme(
       data: Theme.of(context).copyWith(
         textTheme: textTheme,
         appBarTheme: AppBarTheme(
@@ -216,7 +234,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
           foregroundColor: Colors.black,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-            onPressed: () => Get.back(),
+            onPressed: _goBackFromMyOrders,
             style: IconButton.styleFrom(foregroundColor: Colors.black),
           ),
         ),
@@ -235,7 +253,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Reorder and Track your Products',
+                'Manage rentals and book again',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w400,
@@ -250,6 +268,7 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -263,8 +282,8 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       child: Row(
         children: [
           _pillTab(0, 'All'),
-          _pillTab(1, 'To Ship'),
-          _pillTab(2, 'Received'),
+          _pillTab(1, 'Active'),
+          _pillTab(2, 'Completed'),
         ],
       ),
     );
@@ -344,16 +363,19 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       itemBuilder: (context, index) {
         final data = items[index];
         final priceStr = data.totalPrice?.toString() ?? '0';
+        final activeReservation = OrderStatus.isRenterActive(data.orderStatus);
+        final canRentAgain = OrderStatus.isCompleted(data.orderStatus);
         return _RenterOrderCard(
           name: data.productName?.toString() ?? '—',
           price: priceStr,
-          status: data.status,
-          statusLabel: _statusBadgeLabel(data.status),
-          expectedArrival: _formatExpectedArrival(data.originalReturn),
+          orderStatus: data.orderStatus,
+          statusLabel: _statusBadgeLabel(data.orderStatus),
+          expectedArrival: _formatExpectedArrival(data.rentalEndDate),
           imageUrl: _imageUrl(data.productImage?.toString()),
-          canReorder: true,
-          onTrack: () => _openTrack(data),
-          onReorder: () => _openReorder(data),
+          showOpenReservation: activeReservation,
+          showRentAgain: canRentAgain,
+          onCardTap: () => _openReservation(data),
+          onRentAgain: () => _openRentAgain(data),
         );
       },
     );
@@ -363,24 +385,26 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
 class _RenterOrderCard extends StatelessWidget {
   final String name;
   final String price;
-  final int? status;
+  final String? orderStatus;
   final String statusLabel;
   final String expectedArrival;
   final String imageUrl;
-  final bool canReorder;
-  final VoidCallback onTrack;
-  final VoidCallback onReorder;
+  final bool showOpenReservation;
+  final bool showRentAgain;
+  final VoidCallback onCardTap;
+  final VoidCallback onRentAgain;
 
   const _RenterOrderCard({
     required this.name,
     required this.price,
-    required this.status,
+    required this.orderStatus,
     required this.statusLabel,
     required this.expectedArrival,
     required this.imageUrl,
-    required this.canReorder,
-    required this.onTrack,
-    required this.onReorder,
+    required this.showOpenReservation,
+    required this.showRentAgain,
+    required this.onCardTap,
+    required this.onRentAgain,
   });
 
   static const Color _badgeBgOrange = Color(0xFFFFF3E0);
@@ -392,179 +416,187 @@ class _RenterOrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final received = status == 2;
-    final cancelled = status != null && status != 0 && status != 1 && status != 2;
-    final badgeBg =
-        cancelled
-            ? _badgeBgGrey
-            : received
-            ? _badgeBgGreen
-            : _badgeBgOrange;
-    final badgeFg =
-        cancelled
-            ? _badgeFgGrey
-            : received
-            ? _badgeFgGreen
-            : _badgeFgOrange;
+    final completed = OrderStatus.isCompleted(orderStatus);
+    final terminal = OrderStatus.isTerminal(orderStatus);
+    final badgeBg = completed
+        ? _badgeBgGreen
+        : terminal
+        ? _badgeBgGrey
+        : _badgeBgOrange;
+    final badgeFg = completed
+        ? _badgeFgGreen
+        : terminal
+        ? _badgeFgGrey
+        : _badgeFgOrange;
 
     return Material(
       color: Colors.white,
       elevation: 2,
       shadowColor: Colors.black26,
       borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: SizedBox(
-                    width: 72,
-                    height: 72,
-                    child:
-                        imageUrl.isEmpty
-                            ? ColoredBox(
-                              color: const Color(0xFFF5F5F5),
-                              child: Icon(Icons.image_outlined, color: Colors.grey.shade400),
-                            )
-                            : CachedNetworkImage(
-                              imageUrl: imageUrl,
-                              fit: BoxFit.cover,
-                              placeholder:
-                                  (_, __) => ColoredBox(
-                                    color: const Color(0xFFF5F5F5),
-                                    child: Center(
-                                      child: SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: AppColors.primaryColor.withValues(alpha: 0.6),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onCardTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      width: 72,
+                      height: 72,
+                      child:
+                          imageUrl.isEmpty
+                              ? ColoredBox(
+                                color: const Color(0xFFF5F5F5),
+                                child: Icon(Icons.image_outlined, color: Colors.grey.shade400),
+                              )
+                              : CachedNetworkImage(
+                                imageUrl: imageUrl,
+                                fit: BoxFit.cover,
+                                placeholder:
+                                    (_, __) => ColoredBox(
+                                      color: const Color(0xFFF5F5F5),
+                                      child: Center(
+                                        child: SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppColors.primaryColor.withValues(alpha: 0.6),
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                              errorWidget:
-                                  (_, __, ___) => ColoredBox(
-                                    color: const Color(0xFFF5F5F5),
-                                    child: Icon(Icons.chair_outlined, color: Colors.grey.shade500),
-                                  ),
-                            ),
+                                errorWidget:
+                                    (_, __, ___) => ColoredBox(
+                                      color: const Color(0xFFF5F5F5),
+                                      child: Icon(Icons.chair_outlined, color: Colors.grey.shade500),
+                                    ),
+                              ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text(
-                            '\$$price',
-                            style: GoogleFonts.inter(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: badgeBg,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              statusLabel,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              '\$$price',
                               style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: badgeFg,
-                                letterSpacing: 0.3,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black,
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: badgeBg,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  statusLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: badgeFg,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          name,
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        name,
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Expected Arrival: $expectedArrival',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                          color: const Color(0xFF9A9AA1),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Return due: $expectedArrival',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                            color: const Color(0xFF9A9AA1),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: FilledButton(
-                      onPressed: onTrack,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: Text(
-                        'Track',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
-                      ),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: FilledButton(
-                      onPressed: canReorder ? onReorder : null,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: Colors.grey.shade300,
-                        disabledForegroundColor: Colors.grey.shade600,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                ],
+              ),
+              if (showOpenReservation || showRentAgain) ...[
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    if (showOpenReservation)
+                      Expanded(
+                        child: SizedBox(
+                          height: 44,
+                          child: FilledButton(
+                            onPressed: onCardTap,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primaryColor,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: Text(
+                              'Open reservation',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                          ),
                         ),
                       ),
-                      child: Text(
-                        'Reorder',
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                    if (showRentAgain)
+                      Expanded(
+                        child: SizedBox(
+                          height: 44,
+                          child: FilledButton(
+                            onPressed: onRentAgain,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.primaryColor,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: Text(
+                              'Rent again',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
                 ),
               ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

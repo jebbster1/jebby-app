@@ -61,8 +61,6 @@ class AppUrl {
   static var postSeenoneNotification = baseUrlM + "/seenOneNotification";
   static var getAllVendorOrders = baseUrlM + "/getAllOrdersByVendorId/";
   static var getAllUserOrders = baseUrlM + "/getAllOrdersByUserId/";
-  static var orderStatusById = baseUrlM + "/orderStatusById";
-  static var reOrder = baseUrlM + "/reOrder";
   static var getUserStripeTransactions = baseUrlM + "/getUserStripeTransactions/";
 
   static var updateUserRoleApiEndPoint = baseUrlM + '/UpdateUserRole';
@@ -78,4 +76,6 @@ class AppUrl {
       baseUrlM + '/stripe/provider/submit-requirements';
   static var stripeAccountStatus = baseUrlM + '/stripe/account-status/';
   static var eventsUrl = baseUrlM + '/events';
+  static var reservationsActionRequired = '$baseUrlM/reservations/action-required';
+  static var rentProductInsert = '$baseUrlM/rentProductInsert';
 }

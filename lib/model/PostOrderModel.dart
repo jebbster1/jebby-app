@@ -1,10 +1,12 @@
+import '../utils/rental_date.dart';
+
 class PostOrderModel {
   int? userId;
   int? productId;
-  String? rentStart;
-  String? originalReturn;
-  String? name;
-  String? email;
+  int? orderId;
+  String? orderStatus;
+  String? rentalStartDate;
+  String? rentalEndDate;
   String? location;
   int? latitude;
   int? longitude;
@@ -13,10 +15,8 @@ class PostOrderModel {
   PostOrderModel({
     this.userId,
     this.productId,
-    this.rentStart,
-    this.originalReturn,
-    this.name,
-    this.email,
+    this.rentalStartDate,
+    this.rentalEndDate,
     this.location,
     this.latitude,
     this.longitude,
@@ -25,10 +25,8 @@ class PostOrderModel {
   PostOrderModel.fromJson(Map<String, dynamic> json) {
     userId = json['user_id'];
     productId = json['product_id'];
-    rentStart = json['rent_start'];
-    originalReturn = json['original_return'];
-    name = json['name'];
-    email = json['email'];
+    rentalStartDate = parseRentalDate(json['rental_start_date']);
+    rentalEndDate = parseRentalDate(json['rental_end_date']);
     location = json['location'];
     latitude = json['latitude'];
     longitude = json['longitude'];
@@ -38,10 +36,8 @@ class PostOrderModel {
     final Map<String, dynamic> data = new Map<String, dynamic>();
     data['user_id'] = this.userId;
     data['product_id'] = this.productId;
-    data['rent_start'] = this.rentStart;
-    data['original_return'] = this.originalReturn;
-    data['name'] = this.name;
-    data['email'] = this.email;
+    data['rental_start_date'] = this.rentalStartDate;
+    data['rental_end_date'] = this.rentalEndDate;
     data['location'] = this.location;
     data['latitude'] = this.latitude;
     data['longitude'] = this.longitude;

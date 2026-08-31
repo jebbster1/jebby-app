@@ -1,10 +1,14 @@
 import 'dart:convert';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
+import 'package:get/get.dart';
+
 import '../utils/api_headers.dart';
 import '../res/app_url.dart';
 import '../view_model/user_view_model.dart';
+import '../Views/screens/reservations/reservation_detail_screen.dart';
 
 class FCMService {
   static final FCMService _instance = FCMService._internal();
@@ -15,7 +19,6 @@ class FCMService {
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
   Future<void> initialize() async {
-    // Request permission for notifications
     NotificationSettings settings = await _firebaseMessaging.requestPermission(
       alert: true,
       badge: true,
@@ -28,23 +31,19 @@ class FCMService {
       print('User declined or has not accepted permission');
     }
 
-    // Initialize local notifications
     await _initializeLocalNotifications();
 
-    // Get FCM token
     String? token = await _firebaseMessaging.getToken();
     if (token != null) {
       print('FCM Token: $token');
       await _updateFCMToken(token);
     }
 
-    // Listen for token refresh
     _firebaseMessaging.onTokenRefresh.listen((newToken) {
       print('FCM Token refreshed: $newToken');
       _updateFCMToken(newToken);
     });
 
-    // Handle foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       print('Got a message whilst in the foreground!');
       print('Message data: ${message.data}');
@@ -55,10 +54,8 @@ class FCMService {
       }
     });
 
-    // Handle background messages
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-    // Handle when app is opened from notification
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       print('A new onMessageOpenedApp event was published!');
       _handleNotificationTap(message);
@@ -84,8 +81,12 @@ class FCMService {
     await _localNotifications.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // Handle notification tap
-        print('Notification tapped: ${response.payload}');
+        if (response.payload != null && response.payload!.isNotEmpty) {
+          try {
+            final data = Map<String, dynamic>.from(json.decode(response.payload!) as Map);
+            _openReservationFromData(data);
+          } catch (_) {}
+        }
       },
     );
   }
@@ -120,30 +121,21 @@ class FCMService {
   Future<void> _updateFCMToken(String token) async {
     try {
       final user = await UserViewModel().getUser();
-      if (user != null) {
-        print('Updating FCM token for user: ${user.id}');
-        print('FCM token: $token');
-        print('URL: ${AppUrl.updateFCMToken}');
-        
-        final response = await http.post(
-          Uri.parse(AppUrl.updateFCMToken),
-          headers: await ApiHeaders.json(),
-          body: json.encode({
-            'user_id': user.id,
-            'fcm_token': token,
-          }),
-        );
+      print('Updating FCM token for user: ${user.id}');
+      
+      final response = await http.post(
+        Uri.parse(AppUrl.updateFCMToken),
+        headers: await ApiHeaders.json(),
+        body: json.encode({
+          'user_id': user.id,
+          'fcm_token': token,
+        }),
+      );
 
-        print('Response status: ${response.statusCode}');
-        print('Response body: ${response.body}');
-
-        if (response.statusCode == 200) {
-          print('FCM token updated successfully');
-        } else {
-          print('Failed to update FCM token: ${response.body}');
-        }
+      if (response.statusCode == 200) {
+        print('FCM token updated successfully');
       } else {
-        print('User is null, cannot update FCM token');
+        print('Failed to update FCM token: ${response.body}');
       }
     } catch (e) {
       print('Error updating FCM token: $e');
@@ -151,19 +143,45 @@ class FCMService {
   }
 
   void _handleNotificationTap(RemoteMessage message) {
-    // Handle different notification types
-    final data = message.data;
-    final type = data['type'];
+    _openReservationFromData(message.data);
+  }
+
+  void _openReservationFromData(Map<String, dynamic> data) {
+    final type = data['type']?.toString();
+    final orderIdRaw = data['order_id'];
+    final orderId = orderIdRaw is int ? orderIdRaw : int.tryParse('$orderIdRaw');
+
+    const reservationTypes = {
+      'booking_requested',
+      'booking_request',
+      'booking_accepted',
+      'booking_declined',
+      'booking_cancelled',
+      'payment_confirmed',
+      'address_revealed',
+      'handoff_upcoming',
+      'handoff_on_the_way',
+      'handoff_arrived',
+      'handoff_delayed',
+      'inspection_started',
+      'inspection_waiting',
+      'inspection_completed',
+      'dispute_reported',
+      'issue_reported',
+      'return_window_open',
+      'payout_released',
+      'new_order',
+      'payment_success',
+    };
+
+    if (orderId != null && (reservationTypes.contains(type) || type != null)) {
+      Get.to(() => ReservationDetailScreen(orderId: orderId));
+      return;
+    }
 
     switch (type) {
-      case 'new_order':
-      case 'new_reorder':
-        // Navigate to orders screen
-        print('Navigate to orders screen');
-        break;
       case 'payment_success':
       case 'payment_processed':
-        // Navigate to transactions screen
         print('Navigate to transactions screen');
         break;
       default:
@@ -180,9 +198,7 @@ class FCMService {
   }
 }
 
-// Background message handler
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   print('Handling a background message: ${message.messageId}');
   print('Message data: ${message.data}');
-  print('Message notification: ${message.notification?.title}');
-} 
+}

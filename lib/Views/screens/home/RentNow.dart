@@ -8,7 +8,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/Services/provider/sign_in_provider.dart';
-import 'package:jebby/Views/screens/home/Checkout.dart';
+import 'package:jebby/Views/screens/home/CheckOut.dart';
 import 'package:jebby/Views/screens/profile/userprofile.dart';
 import 'package:jebby/Views/widgets/address_autocomplete_field.dart';
 import 'package:jebby/utils/google_places_address.dart';
@@ -18,10 +18,13 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../../../model/user_model.dart';
+import '../../../model/handoff_window.dart';
 import '../../../res/app_url.dart';
 import '../../../view_model/apiServices.dart';
 
 import '../../../view_model/user_view_model.dart';
+import '../../../utils/delivery_radius.dart';
+import '../../../utils/rental_date.dart';
 import '../../../utils/show_snackbar.dart';
 
 class RentnowScreen extends StatefulWidget {
@@ -38,10 +41,13 @@ class RentnowScreen extends StatefulWidget {
   final dynamic route;
   final dynamic delivery_charges;
   final dynamic security_deposit;
-  final int isDelivery;
+  final bool offersPickup;
+  final bool offersDelivery;
   final String productAddress;
   final String productLat;
   final String productLng;
+  final List<HandoffWindow> handoffWindows;
+  final int? deliveryRadiusMiles;
 
   RentnowScreen(
     this.vendorName,
@@ -57,10 +63,13 @@ class RentnowScreen extends StatefulWidget {
     this.route,
     this.delivery_charges,
     this.security_deposit,
-    this.isDelivery,
+    this.offersPickup,
+    this.offersDelivery,
     this.productAddress,
     this.productLat,
     this.productLng,
+    this.handoffWindows,
+    this.deliveryRadiusMiles,
   );
 
   @override
@@ -139,6 +148,92 @@ class _RentnowScreenState extends State<RentnowScreen> {
 
   String? zipCode;
   String? countryCode;
+  String _transportType = 'pickup';
+  HandoffWindow? _pickupWindow;
+  HandoffWindow? _returnWindow;
+  List<RentalWindow> _bookedDates = [];
+
+  List<HandoffWindow> get _listingWindows =>
+      widget.handoffWindows.isNotEmpty ? widget.handoffWindows : HandoffWindow.defaultSlots;
+
+  void _ensureWindowDefaults() {
+    _pickupWindow ??= _listingWindows.first;
+    _returnWindow ??= _listingWindows.first;
+  }
+
+  Map<String, String> _bookingWindowPayload() {
+    final pickup = _pickupWindow ?? _listingWindows.first;
+    final ret = _returnWindow ?? _listingWindows.first;
+    final pickupDate = DateFormat('yyyy-MM-dd').format(selectedDate);
+    final returnDate = DateFormat('yyyy-MM-dd').format(selectedDate1);
+    return {
+      'pickupWindowBegin': pickup.beginOnDate(pickupDate),
+      'pickupWindowEnd': pickup.endOnDate(pickupDate),
+      'returnWindowBegin': ret.beginOnDate(returnDate),
+      'returnWindowEnd': ret.endOnDate(returnDate),
+    };
+  }
+
+  Widget _handoffWindowPicker({
+    required String title,
+    required String dateLabel,
+    required HandoffWindow? selected,
+    required ValueChanged<HandoffWindow> onSelected,
+  }) {
+    final windows = _listingWindows;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: _titleDark,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(dateLabel, style: GoogleFonts.inter(fontSize: 13, color: _bodyGrey)),
+        const SizedBox(height: 8),
+        if (windows.length == 1)
+          Text(
+            windows.first.displayRange,
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500, color: _titleDark),
+          )
+        else
+          ...windows.map(
+            (window) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _windowChip(
+                window.displayRange,
+                selected == window,
+                () => onSelected(window),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _windowChip(String label, bool selected, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFFFF4D6) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? _accent : const Color(0xFFE1E1E1)),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: _titleDark),
+        ),
+      ),
+    );
+  }
   Future<void> _getZipCodeFromCoordinates(
     double latitude,
     double longitude,
@@ -176,34 +271,127 @@ class _RentnowScreenState extends State<RentnowScreen> {
     nameController.text = Prefrences.getString('fullname').toString();
     emailController.text = Prefrences.getString('email').toString();
 
-    if (widget.isDelivery == 1) {
-      final storedAddress = Prefrences.getString('address');
-      final addressText =
-          storedAddress == null ? '' : storedAddress;
+    if (_usesDelivery) {
+      await _applyUserDeliveryAddress();
+    } else {
+      _applyPickupLocation();
+    }
+  }
+
+  Future<void> _applyUserDeliveryAddress() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedAddress = prefs.getString('address');
+    final addressText = storedAddress ?? '';
+    final latStr = prefs.getString('latitude') ?? '';
+    final lngStr = prefs.getString('longitude') ?? '';
+
+    if (!mounted) return;
+    setState(() {
       _CurrentAddressController.text = addressText;
       _locationController.text = addressText;
-      Longitude = Prefrences.getString('longitude').toString();
-      Latitiude = Prefrences.getString('latitude').toString();
-
+      Latitiude = latStr;
+      Longitude = lngStr;
       if (addressText.isNotEmpty) {
         _resolvedAddress = ParsedUsAddress(
           formattedAddress: addressText,
-          latitude: double.tryParse(Latitiude),
-          longitude: double.tryParse(Longitude),
+          latitude: double.tryParse(latStr),
+          longitude: double.tryParse(lngStr),
         );
+      } else {
+        _resolvedAddress = null;
       }
+    });
 
-      final lat = double.tryParse(Latitiude);
-      final lng = double.tryParse(Longitude);
-      if (lat != null && lng != null) {
-        await _getZipCodeFromCoordinates(lat, lng);
-      }
-    } else {
+    final lat = double.tryParse(latStr);
+    final lng = double.tryParse(lngStr);
+    if (lat != null && lng != null) {
+      await _getZipCodeFromCoordinates(lat, lng);
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _applyPickupLocation() {
+    setState(() {
       _locationController.text = widget.productAddress;
-      _CurrentAddressController.text = widget.productAddress;
+      _CurrentAddressController.clear();
+      _resolvedAddress = null;
       Latitiude = widget.productLat;
       Longitude = widget.productLng;
+    });
+  }
+
+  Future<void> _setTransportType(String value) async {
+    if (_transportType == value) return;
+    setState(() => _transportType = value);
+    if (value == 'delivery') {
+      await _applyUserDeliveryAddress();
+    } else {
+      _applyPickupLocation();
     }
+  }
+
+  Widget _buildFulfillmentSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Fulfillment',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+              color: _titleDark,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Choose how the item is handed off and returned.',
+            style: GoogleFonts.inter(fontSize: 13, color: _bodyGrey, height: 1.35),
+          ),
+          const SizedBox(height: 14),
+          if (widget.offersPickup && widget.offersDelivery) ...[
+            Text(
+              'Pickup or delivery',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: _titleDark,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _transportChip('Pickup & Return', 'pickup'),
+            const SizedBox(height: 8),
+            _transportChip('Delivery & Retrieval', 'delivery'),
+          ] else if (widget.offersPickup)
+            _transportChip('Pickup & Return', 'pickup')
+          else if (widget.offersDelivery)
+            _transportChip('Delivery & Retrieval', 'delivery'),
+          const SizedBox(height: 16),
+          Divider(height: 1, color: Colors.grey.shade200),
+          const SizedBox(height: 16),
+          _handoffWindowPicker(
+            title: 'Pickup time window',
+            dateLabel: myPillFormat.format(selectedDate),
+            selected: _pickupWindow,
+            onSelected: (window) => setState(() => _pickupWindow = window),
+          ),
+          const SizedBox(height: 12),
+          _handoffWindowPicker(
+            title: 'Return time window',
+            dateLabel: myPillFormat.format(selectedDate1),
+            selected: _returnWindow,
+            onSelected: (window) => setState(() => _returnWindow = window),
+          ),
+        ],
+      ),
+    );
   }
 
   String _pickupLocationLabel() {
@@ -217,8 +405,36 @@ class _RentnowScreenState extends State<RentnowScreen> {
     return 'Location unavailable';
   }
 
+  Widget _transportChip(String label, String value) {
+    final selected = _transportType == value;
+    return InkWell(
+      onTap: () => _setTransportType(value),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFFFF4D6) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? _accent : const Color(0xFFE1E1E1),
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w600,
+            color: _titleDark,
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool get _usesDelivery => _transportType == 'delivery';
+
   String _checkoutLocation() {
-    if (widget.isDelivery == 1) {
+    if (_usesDelivery) {
       return _CurrentAddressController.text.toString();
     }
     return widget.productAddress.trim().isNotEmpty
@@ -227,21 +443,21 @@ class _RentnowScreenState extends State<RentnowScreen> {
   }
 
   String _checkoutLat() {
-    if (widget.isDelivery == 1) {
+    if (_usesDelivery) {
       return Latitiude.toString();
     }
     return widget.productLat.isNotEmpty ? widget.productLat : '0';
   }
 
   String _checkoutLng() {
-    if (widget.isDelivery == 1) {
+    if (_usesDelivery) {
       return Longitude.toString();
     }
     return widget.productLng.isNotEmpty ? widget.productLng : '0';
   }
 
   bool _hasRequiredLocation() {
-    if (widget.isDelivery == 1) {
+    if (_usesDelivery) {
       return _resolvedAddress?.hasResolvedMapLocation == true;
     }
     return widget.productAddress.trim().isNotEmpty ||
@@ -249,17 +465,117 @@ class _RentnowScreenState extends State<RentnowScreen> {
         (double.tryParse(widget.productLng) ?? 0) != 0;
   }
 
+  double? get _listingLat => double.tryParse(widget.productLat);
+
+  double? get _listingLng => double.tryParse(widget.productLng);
+
+  double? get _deliveryLat => double.tryParse(Latitiude);
+
+  double? get _deliveryLng => double.tryParse(Longitude);
+
+  String? get _deliveryRadiusError => _usesDelivery
+      ? DeliveryRadius.validationError(
+          listingLat: _listingLat,
+          listingLng: _listingLng,
+          deliveryLat: _deliveryLat,
+          deliveryLng: _deliveryLng,
+          radiusMiles: widget.deliveryRadiusMiles,
+        )
+      : null;
+
+  bool _validateDeliveryRadius({bool showError = true}) {
+    final error = _deliveryRadiusError;
+    if (error == null) return true;
+    if (showError) {
+      showAppErrorSnackbar(
+        error,
+        title: DeliveryRadius.snackbarTitleForMessage(error),
+      );
+    }
+    return false;
+  }
+
+  String _selectedStartDate() => DateFormat('yyyy-MM-dd').format(selectedDate);
+
+  String _selectedEndDate() => DateFormat('yyyy-MM-dd').format(selectedDate1);
+
+  bool _validateNoDateConflict({bool showError = true}) {
+    final conflict = findOverlappingRentalOrder(
+      newStart: _selectedStartDate(),
+      newEnd: _selectedEndDate(),
+      existingOrders: _bookedDates,
+    );
+    if (conflict == null) return true;
+    if (showError) {
+      showAppErrorSnackbar(
+        'These dates are unavailable. Choose different dates.',
+        title: 'Dates unavailable',
+      );
+    }
+    return false;
+  }
+
+  void _syncBookedDates() {
+    final product = ApiRepository.shared.getProductsByIdList?.data?.firstOrNull;
+    if (product == null || '${product.id}' != '${widget.productID}') return;
+    _bookedDates = product.bookedDates;
+  }
+
+  Widget _deliveryRadiusHint() {
+    final radius = widget.deliveryRadiusMiles;
+    if (!_usesDelivery || radius == null || radius <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final outOfRange = _deliveryRadiusError != null &&
+        _resolvedAddress?.hasResolvedMapLocation == true;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Delivery available within $radius mi of the listing location.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: _bodyGrey,
+              height: 1.35,
+            ),
+          ),
+          if (outOfRange) ...[
+            const SizedBox(height: 6),
+            Text(
+              _deliveryRadiusError!,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: Colors.red.shade700,
+                height: 1.35,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    if (widget.offersDelivery && !widget.offersPickup) {
+      _transportType = 'delivery';
+    }
     _loadData();
     getData();
     profileData(context);
+    _syncBookedDates();
     selectedDate =
         DateTime.now(); //DateTime.parse(widget.availableFrom).isBefore(DateTime.now()) ? DateTime.now() : DateTime.parse(widget.availableFrom);
     selectedDate1 = DateTime.now().add(
       Duration(days: 1),
-    ); //DateTime.parse(widget.availableTo);
+    );
+    _ensureWindowDefaults();
     pre();
   }
 
@@ -399,6 +715,7 @@ class _RentnowScreenState extends State<RentnowScreen> {
     final today = _dateOnly(DateTime.now());
     final last = _lastAllowedDate();
     if (day.isBefore(today) || day.isAfter(last)) return;
+    if (isDayInBookedRange(day, _bookedDates)) return;
 
     setState(() {
       if (!_isSelectingEnd) {
@@ -415,6 +732,7 @@ class _RentnowScreenState extends State<RentnowScreen> {
         selectedDate1 = day;
         _isSelectingEnd = false;
       }
+      _ensureWindowDefaults();
     });
   }
 
@@ -524,7 +842,9 @@ class _RentnowScreenState extends State<RentnowScreen> {
                   final dayNum = index - leadingEmpty + 1;
                   final day =
                       DateTime(_calendarMonth.year, _calendarMonth.month, dayNum);
-                  final disabled = day.isBefore(today) || day.isAfter(lastAllowed);
+                  final isBooked = isDayInBookedRange(day, _bookedDates);
+                  final disabled =
+                      day.isBefore(today) || day.isAfter(lastAllowed) || isBooked;
                   final isStart = _isSameDay(day, start);
                   final isEnd = _isSameDay(day, end);
                   final inRange = _isWithinSelectedRange(day);
@@ -560,7 +880,14 @@ class _RentnowScreenState extends State<RentnowScreen> {
                   BoxDecoration? rangeDeco;
                   BoxDecoration? dayDeco;
                   Alignment dayAlignment = Alignment.center;
-                  if (disabled) {
+                  if (isBooked && !day.isBefore(today)) {
+                    dayDeco = BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFFFEBEE),
+                      border: Border.all(color: const Color(0xFFE53935), width: 1.5),
+                    );
+                    textColor = const Color(0xFFC62828);
+                  } else if (disabled) {
                     textColor = const Color(0xFFB8BED1);
                   } else if (inRange && !isSingleDaySelection) {
                     rangeDeco = BoxDecoration(
@@ -573,7 +900,7 @@ class _RentnowScreenState extends State<RentnowScreen> {
                       ),
                     );
                   }
-                  if (!disabled && (isStart || isEnd)) {
+                  if (!disabled && !isBooked && (isStart || isEnd)) {
                     dayDeco = BoxDecoration(
                       color: const Color(0xFF0A143D),
                       borderRadius: BorderRadius.circular(10),
@@ -841,7 +1168,7 @@ class _RentnowScreenState extends State<RentnowScreen> {
                     ),
                   ],
                 ),
-                if (widget.isDelivery == 1) ...[
+                if (_usesDelivery) ...[
                   _pricingRow(
                     'Delivery',
                     _moneyLabel(widget.delivery_charges),
@@ -955,7 +1282,7 @@ class _RentnowScreenState extends State<RentnowScreen> {
                     children: [
                       SizedBox(height: res_height * 0.02),
                       Text(
-                        widget.isDelivery == 1
+                        _usesDelivery
                             ? 'Delivery address'
                             : 'Pickup location',
                         style: GoogleFonts.inter(
@@ -965,7 +1292,7 @@ class _RentnowScreenState extends State<RentnowScreen> {
                         ),
                       ),
                       SizedBox(height: res_height * 0.005),
-                      if (widget.isDelivery == 1)
+                      if (_usesDelivery) ...[
                         SizedBox(
                           width: res_width * 0.89,
                           child: AddressAutocompleteField(
@@ -1003,8 +1330,9 @@ class _RentnowScreenState extends State<RentnowScreen> {
                               ),
                             ),
                           ),
-                        )
-                      else
+                        ),
+                        _deliveryRadiusHint(),
+                      ] else
                         Container(
                           width: res_width * 0.89,
                           padding: const EdgeInsets.symmetric(
@@ -1041,8 +1369,11 @@ class _RentnowScreenState extends State<RentnowScreen> {
                     ],
                   ),
                 ),
-                SizedBox(height: 5),
-
+                SizedBox(height: 16),
+                SizedBox(
+                  width: res_width * 0.89,
+                  child: _buildFulfillmentSection(),
+                ),
 
                 SizedBox(height: 20),
                 Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
@@ -1103,9 +1434,9 @@ class _RentnowScreenState extends State<RentnowScreen> {
                                   .inMilliseconds >=
                               0) {
                             showAppErrorSnackbar('Please Enter Valid End Date', title: 'Required');
-                          } else if (emailController.text.isNotEmpty &&
-                              _hasRequiredLocation() &&
-                              nameController.text.isNotEmpty) {
+                          } else if (_hasRequiredLocation()) {
+                            if (!_validateDeliveryRadius()) return;
+                            if (!_validateNoDateConflict()) return;
                             showAppSnackbar('Required', 'Please Wait');
                             ApiRepository.shared.postOrder(
                               context,
@@ -1117,19 +1448,15 @@ class _RentnowScreenState extends State<RentnowScreen> {
                               DateFormat(
                                 'yyyy-MM-dd',
                               ).format(selectedDate1).toString(),
-                              fullname,
-                              emailController.text.toString(),
                               _checkoutLocation(),
                               _checkoutLat(),
                               _checkoutLng(),
-                              _checkoutLocation(),
                               widget.security_deposit.toString(),
-                              '',
                             );
                           } else {
                             String message = "Fields Cannot Be Empty";
                             if (!_hasRequiredLocation()) {
-                              message = widget.isDelivery == 1
+                              message = _usesDelivery
                                   ? ParsedUsAddress.selectFromSuggestionsMessage
                                   : "Pickup location is unavailable for this listing";
                             }
@@ -1147,9 +1474,10 @@ class _RentnowScreenState extends State<RentnowScreen> {
                             showAppErrorSnackbar(
                               'Vendor account not found. Please ensure the vendor has completed Stripe onboarding.',
                             );
-                          } else if (emailController.text.isNotEmpty &&
-                              _hasRequiredLocation() &&
-                              nameController.text.isNotEmpty) {
+                          } else if (_hasRequiredLocation()) {
+                            if (!_validateDeliveryRadius()) return;
+                            if (!_validateNoDateConflict()) return;
+                            final windows = _bookingWindowPayload();
                             Get.to(
                               () => CheckoutScreen(
                                 userID,
@@ -1179,13 +1507,17 @@ class _RentnowScreenState extends State<RentnowScreen> {
                                 widget.security_deposit,
                                 zipCode,
                                 countryCode,
-                                widget.isDelivery,
+                                pickupWindowBegin: windows['pickupWindowBegin'],
+                                pickupWindowEnd: windows['pickupWindowEnd'],
+                                returnWindowBegin: windows['returnWindowBegin'],
+                                returnWindowEnd: windows['returnWindowEnd'],
+                                transportType: _transportType,
                               ),
                             );
                           } else {
                             String message = "Fields Cannot Be Empty";
                             if (!_hasRequiredLocation()) {
-                              message = widget.isDelivery == 1
+                              message = _usesDelivery
                                   ? ParsedUsAddress.selectFromSuggestionsMessage
                                   : "Pickup location is unavailable for this listing";
                             }

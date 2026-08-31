@@ -18,7 +18,12 @@ import 'package:jebby/model/getCategoryByIdModel.dart';
 import 'package:jebby/model/getSubCategoryByIdModel.dart';
 import 'package:jebby/model/postNotificationSeenOneModal.dart';
 import 'package:jebby/model/vendorProductModel.dart';
+import '../utils/api_session.dart';
+import '../utils/rental_date.dart';
+import '../Views/screens/home/MyOrders.dart';
 import '../Views/screens/mainfolder/homemain.dart';
+import '../Views/screens/reservations/reservation_detail_screen.dart';
+import '../repository/reservation_repository.dart';
 import '../model/PostMessageModel.dart';
 import '../model/PostOrderModel.dart';
 import '../model/addFavouriteModel.dart';
@@ -40,15 +45,13 @@ import '../model/getProductsByProductId.dart';
 import '../model/getUserCredentialModel.dart';
 import '../model/getVendorProductsByReviewsModel.dart';
 import '../model/postNotificationSeenModel.dart';
-import '../model/postOrderStatusUpdateModel.dart';
 import '../model/productDeleteModelImage.dart';
 import '../model/productUpdateModel.dart';
-import '../model/reOrderModel.dart';
-import '../model/stripePaymentModel.dart';
 import '../model/stripeTransactionsModel.dart';
 import '../model/sub_category_list_model.dart';
 import '../res/app_url.dart';
 import '../utils/api_headers.dart';
+import '../utils/delivery_radius.dart';
 import '../utils/show_snackbar.dart';
 
 class ApiRepository extends ChangeNotifier {
@@ -417,17 +420,19 @@ class ApiRepository extends ChangeNotifier {
     id,
     prodID,
     user_id1,
-    is_delivery,
+    offers_pickup,
+    offers_delivery,
     available_from,
     available_to,
     delivery_charges,
     security_deposit,
     address,
     latitude,
-    longitude,
-
-  ) async {
-    final request = json.encode(<String, dynamic>{
+    longitude, [
+    List<dynamic>? handoffWindows,
+    String? deliveryRadiusMiles,
+  ]) async {
+    final body = <String, dynamic>{
       "user_id": user_id,
       "category_id": category_id,
       "subcategory_id": subcategory_id,
@@ -438,7 +443,8 @@ class ApiRepository extends ChangeNotifier {
       "id": id,
       "product_id": prodID,
       "user_id1": user_id1,
-      "is_delivery": is_delivery,
+      "offers_pickup": offers_pickup,
+      "offers_delivery": offers_delivery,
       "available_from": available_from,
       "available_to": available_to,
       "delivery_charges": delivery_charges,
@@ -446,7 +452,16 @@ class ApiRepository extends ChangeNotifier {
       "address": address,
       "latitude": latitude,
       "longitude": longitude,
-    });
+    };
+    if (handoffWindows != null) {
+      body["handoff_windows"] = jsonEncode(
+        handoffWindows.map((w) => (w as dynamic).toJson()).toList(),
+      );
+    }
+    if (deliveryRadiusMiles != null && deliveryRadiusMiles.isNotEmpty) {
+      body["delivery_radius_miles"] = deliveryRadiusMiles;
+    }
+    final request = json.encode(body);
 
     final response = await http.post(
       Uri.parse("${Url}/productUpdate"),
@@ -727,144 +742,144 @@ class ApiRepository extends ChangeNotifier {
     return GetChatHistoryModel();
   }
 
-  Future<PayWithStripeModel> stripePayment(
-    /*cardNumber, expiryMonth, expiryYear, cvv,*/ amount,
-    accountId,
-    context,
-    userid,
-    productId,
-    rentStart,
-    originalReturn,
-    name,
-    email,
-    location,
-    lat,
-    long,
-    shipping_address,
-    security_deposit,
-    ApplicationFees,
+  Future<bool> acceptVendorBooking(int orderId) async {
+    try {
+      await ReservationRepository.instance.acceptOrder(orderId);
+      showAppSuccessSnackbar('Booking accepted. Waiting for renter payment.');
+      return true;
+    } catch (e) {
+      final message = e.toString().replaceFirst('Exception: ', '');
+      showAppErrorSnackbar(message.isEmpty ? 'Unable to accept booking' : message);
+      return false;
+    }
+  }
 
-  ) async {
+  Future<bool> declineVendorBooking(
+    int orderId, {
+    String? reason,
+  }) async {
+    try {
+      await ReservationRepository.instance.declineOrder(orderId, reason: reason);
+      showAppSuccessSnackbar('Booking declined.');
+      return true;
+    } catch (e) {
+      final message = e.toString().replaceFirst('Exception: ', '');
+      showAppErrorSnackbar(message.isEmpty ? 'Unable to decline booking' : message);
+      return false;
+    }
+  }
 
+  Future<bool> payAcceptedOrder({
+    required int orderId,
+    required String userId,
+    required num amount,
+    required String vendorAccountId,
+    required num applicationFees,
+  }) async {
     final request = json.encode(<String, dynamic>{
-      "amount": amount,
-      "vendorAccountId": accountId,
-      "sales_tax": ApplicationFees.toInt(),
-      "user_id": userid,
+      'amount': amount,
+      'vendorAccountId': vendorAccountId,
+      'sales_tax': applicationFees,
+      'user_id': userId,
+      'order_id': orderId,
     });
 
     final response = await http.post(
-      Uri.parse("${Url}/payByStripe"),
+      Uri.parse('${Url}/payByStripe'),
       body: request,
       headers: await ApiHeaders.json(),
     );
-    
-    if (response.statusCode == 200) {
-      try {
-        final responseData = json.decode(response.body);
 
-        // Assuming your backend returns the client secret
-        final clientSecret = responseData['client_secret'];
-
-        await Stripe.instance.initPaymentSheet(
-          paymentSheetParameters: SetupPaymentSheetParameters(
-            paymentIntentClientSecret: clientSecret,
-            merchantDisplayName: 'Jebby LLC',
-            customerId: userid, // Optional
-            // Optionally, configure Google Pay and Apple Pay here:
-          ),
-        );
-
-        await Stripe.instance.presentPaymentSheet();
-
-        showAppSnackbar(
-          'Processing',
-          'Processing payment and placing order...',
-        );
-
-        ApiRepository.shared.postOrder(
-          context,
-          userid,
-          productId,
-          rentStart,
-          originalReturn,
-          name,
-          email,
-          location,
-          lat,
-          long,
-          shipping_address,
-          security_deposit,
-          responseData['payment_intent_id'],
-        );
-
-
-      } catch (error) {
-      }
-    } else if (response.statusCode == 400) {
-      // Parse error message from backend
+    if (response.statusCode != 200) {
       try {
         final errorData = json.decode(response.body);
-        String errorMessage = "Payment validation failed";
-        
-        if (errorData['message'] != null) {
-          errorMessage = errorData['message'];
-        } else if (errorData['error'] != null) {
-          errorMessage = errorData['error'];
-        }
-        
+        final errorMessage = errorData['message']?.toString() ??
+            errorData['error']?.toString() ??
+            'Payment validation failed';
         showAppErrorSnackbar(errorMessage);
-      } catch (e) {
-        showAppErrorSnackbar("Payment validation failed");
+      } catch (_) {
+        showAppErrorSnackbar('Payment validation failed');
       }
-    } else if (response.statusCode == 500) {
-      // Parse error message from backend
-      try {
-        final errorData = json.decode(response.body);
-        String errorMessage = "Server error occurred";
-        
-        if (errorData['message'] != null) {
-          errorMessage = errorData['message'];
-        } else if (errorData['error'] != null) {
-          errorMessage = errorData['error'];
-        }
-        
-        showAppErrorSnackbar(errorMessage);
-      } catch (e) {
-        showAppErrorSnackbar("Server error occurred");
-      }
+      return false;
     }
-    return PayWithStripeModel();
+
+    try {
+      final responseData = json.decode(response.body);
+      final clientSecret = responseData['client_secret'];
+      final paymentIntentId = responseData['payment_intent_id']?.toString();
+
+      if (clientSecret == null || paymentIntentId == null) {
+        showAppErrorSnackbar('Unable to start payment. Please try again.');
+        return false;
+      }
+
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Jebby LLC',
+          customerId: userId,
+        ),
+      );
+
+      await Stripe.instance.presentPaymentSheet();
+
+      showAppSnackbar(
+        'Processing',
+        'Securing payment and confirming your reservation...',
+      );
+
+      await ReservationRepository.instance.confirmPayment(orderId, paymentIntentId);
+
+      showAppSuccessSnackbar(
+        'Payment confirmed. Coordinate your handoff from the reservation screen.',
+      );
+      return true;
+    } catch (error) {
+      final message = error.toString().toLowerCase();
+      if (!message.contains('cancel') && !message.contains('canceled')) {
+        showAppErrorSnackbar('Payment could not be completed. Please try again.');
+      }
+      return false;
+    }
   }
 
   Future<PostOrderModel> postOrder(
     context,
     userid,
     productId,
-    rentStart,
-    originalReturn,
-    name,
-    email,
+    rentalStartDate,
+    rentalEndDate,
     location,
     lat,
     long,
-    shipping_address,
-    security_deposit,
-    deposit_id,
-  ) async {
+    security_deposit, {
+    String? paymentIntentId,
+    String transportType = 'pickup',
+    num transportFee = 0,
+    String? pickupWindowBegin,
+    String? pickupWindowEnd,
+    String? returnWindowBegin,
+    String? returnWindowEnd,
+    bool navigateOnSuccess = true,
+  }) async {
+    final normalizedStart = parseRentalDate(rentalStartDate);
+    final normalizedEnd = parseRentalDate(rentalEndDate);
     final request = json.encode(<String, dynamic>{
       "user_id": userid,
       "product_id": productId,
-      "rent_start": rentStart,
-      "original_return": originalReturn,
-      "name": name,
-      "email": email,
+      "rental_start_date": normalizedStart,
+      "rental_end_date": normalizedEnd,
       "location": location,
       "latitude": lat,
       "longitude": long,
-      "shipping_address": shipping_address,
       "security_deposit": security_deposit,
-      "deposit_payment_id": deposit_id,
+      if (paymentIntentId != null) "payment_intent_id": paymentIntentId,
+      "transport_type": transportType,
+      "transport_fee": transportFee,
+      if (pickupWindowBegin != null) "pickup_window_begin": pickupWindowBegin,
+      if (pickupWindowEnd != null) "pickup_window_end": pickupWindowEnd,
+      if (returnWindowBegin != null) "return_window_begin": returnWindowBegin,
+      if (returnWindowEnd != null) "return_window_end": returnWindowEnd,
     });
 
     final response = await http.post(
@@ -874,15 +889,58 @@ class ApiRepository extends ChangeNotifier {
     );
 
     if (response.statusCode == 200) {
-      showAppSuccessSnackbar(
-        'Payment successful! Order placed successfully. You and the item owner have been notified.',
-      );
-      Get.off(() => MainScreen());
+      int? orderId;
+      String? orderStatus;
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded['status'] == 400) {
+          final message = decoded['message']?.toString() ?? 'Unable to place order';
+          showAppErrorSnackbar(
+            message,
+            title: DeliveryRadius.snackbarTitleForMessage(message),
+          );
+          return PostOrderModel();
+        }
+        orderId = decoded['data']?['order_id'] is int
+            ? decoded['data']['order_id']
+            : int.tryParse('${decoded['data']?['order_id']}');
+        orderStatus = decoded['data']?['order_status']?.toString();
+      } catch (_) {}
 
+      if (orderId == null) {
+        showAppErrorSnackbar('Unable to place order');
+        return PostOrderModel();
+      }
 
+      final savedOrderId = orderId;
 
+      if (navigateOnSuccess) {
+        if (paymentIntentId != null) {
+          showAppSuccessSnackbar(
+            'Payment successful! Order placed successfully. You and the item owner have been notified.',
+          );
+        } else {
+          showAppSuccessSnackbar('Booking request sent to the earner.');
+        }
+        Get.offAll(() => const MainScreen());
+        Get.to(() => const MyOrdersScreen());
+        Get.to(() => ReservationDetailScreen(orderId: savedOrderId));
+      }
 
+      return PostOrderModel()
+        ..orderId = savedOrderId
+        ..orderStatus = orderStatus;
     } else if (response.statusCode == 400) {
+      try {
+        final decoded = json.decode(response.body);
+        final message = decoded['message']?.toString() ?? 'Unable to place order';
+        showAppErrorSnackbar(
+          message,
+          title: DeliveryRadius.snackbarTitleForMessage(message),
+        );
+      } catch (_) {
+        showAppErrorSnackbar('Unable to place order');
+      }
     } else if (response.statusCode == 500) {
       showAppErrorSnackbar('Error in saving order');
     }
@@ -1130,8 +1188,9 @@ class ApiRepository extends ChangeNotifier {
   Future<GetAllOrderByVendorIdModel> getVenodorOrders(
     String id,
     onResponse(GetAllOrderByVendorIdModel List),
-    onError(error),
-  ) async {
+    onError(error), {
+    bool updateCache = true,
+  }) async {
     final response = await http.get(
       Uri.parse(AppUrl.getAllVendorOrders + id),
       headers: await ApiHeaders.json(),
@@ -1142,7 +1201,9 @@ class ApiRepository extends ChangeNotifier {
           jsonDecode(response.body),
         );
 
-        getAllOrdersByVenodrId(data);
+        if (updateCache) {
+          getAllOrdersByVenodrId(data);
+        }
         onResponse(data);
 
         return data;
@@ -1156,39 +1217,6 @@ class ApiRepository extends ChangeNotifier {
     }
 
     return GetAllOrderByVendorIdModel();
-  }
-
-  Future<PostOrderStatusUpdateModel> orderStatusUpdate(
-    id,
-    status,
-    desc,
-    vendorID,
-    route,
-  ) async {
-    final request = json.encode(<String, dynamic>{
-      "id": id,
-      "status": status,
-      "description": desc,
-    });
-
-    final response = await http.post(
-      Uri.parse(AppUrl.orderStatusById),
-      body: request,
-      headers: await ApiHeaders.json(),
-    );
-    if (response.statusCode == 200) {
-      try {
-        ApiRepository.shared.getVenodorOrders(
-          vendorID.toString(),
-          (List) {},
-          (error) {},
-        );
-      } catch (error) {
-      }
-    } else if (response.statusCode == 400) {
-    } else if (response.statusCode == 500) {
-    }
-    return PostOrderStatusUpdateModel();
   }
 
   Future<GetAllOrdersByUserIdModel> getAllOrdersByUserId(
@@ -1214,6 +1242,9 @@ class ApiRepository extends ChangeNotifier {
       } catch (error) {
         onError(error.toString());
       }
+    } else if (response.statusCode == 401) {
+      await ApiSession.handleUnauthorized(response);
+      onError('Session expired');
     } else if (response.statusCode == 400) {
       onError("You are not in Range");
     } else if (response.statusCode == 500) {
@@ -1221,110 +1252,6 @@ class ApiRepository extends ChangeNotifier {
     }
 
     return GetAllOrdersByUserIdModel();
-  }
-
-  Future<ReOrderModel> reOrder(id, location) async {
-    final request = json.encode(<String, dynamic>{
-      "id": id,
-      "location": location,
-    });
-
-    final response = await http.post(
-      Uri.parse(AppUrl.reOrder),
-      body: request,
-      headers: await ApiHeaders.json(),
-    );
-    if (response.statusCode == 200) {
-      try {
-        showAppSuccessSnackbar('Order placed successfully.');
-
-        Get.offAll(() => MainScreen());
-      } catch (error) {
-      }
-    } else if (response.statusCode == 400) {
-    } else if (response.statusCode == 500) {
-    }
-    return ReOrderModel();
-  }
-
-  Future<PayWithStripeModel> reOrderStripePayment(
-    amount,
-    accountId,
-    context,
-    orderId,
-    location,
-    applicationFee,
-  ) async {
-
-    final request = json.encode(<String, dynamic>{
-      "amount": amount,
-      "vendorAccountId": accountId,
-      "sales_tax": applicationFee,
-    });
-
-    final response = await http.post(
-      Uri.parse("${Url}/payByStripe"),
-      body: request,
-      headers: await ApiHeaders.json(),
-    );
-    if (response.statusCode == 200) {
-      try {
-        final responseData = json.decode(response.body);
-        // Assuming your backend returns the client secret
-        final clientSecret = responseData['client_secret'];
-
-        await Stripe.instance.initPaymentSheet(
-          paymentSheetParameters: SetupPaymentSheetParameters(
-            paymentIntentClientSecret: clientSecret,
-            merchantDisplayName: 'Jebby LLC',
-            // Optionally, configure Google Pay and Apple Pay here:
-          ),
-        );
-
-        await Stripe.instance.presentPaymentSheet();
-
-        showAppSnackbar(
-          'Processing',
-          'Amount debited, placing order please wait',
-        );
-
-        ApiRepository.shared.reOrder(orderId, location);
-      } catch (error) {
-      }
-    } else if (response.statusCode == 400) {
-      // Parse error message from backend
-      try {
-        final errorData = json.decode(response.body);
-        String errorMessage = "Payment validation failed";
-        
-        if (errorData['message'] != null) {
-          errorMessage = errorData['message'];
-        } else if (errorData['error'] != null) {
-          errorMessage = errorData['error'];
-        }
-        
-        showAppErrorSnackbar(errorMessage);
-      } catch (e) {
-        showAppErrorSnackbar("Payment validation failed");
-      }
-    } else if (response.statusCode == 500) {
-      // Parse error message from backend
-      try {
-        final errorData = json.decode(response.body);
-        String errorMessage = "Server error occurred";
-        
-        if (errorData['message'] != null) {
-          errorMessage = errorData['message'];
-        } else if (errorData['error'] != null) {
-          errorMessage = errorData['error'];
-        }
-        
-        showAppErrorSnackbar(errorMessage);
-      } catch (e) {
-        showAppErrorSnackbar("Server error occurred");
-      }
-    }
-    return PayWithStripeModel();
   }
 
   Future<GetFeaturedModel> featuredProducts(

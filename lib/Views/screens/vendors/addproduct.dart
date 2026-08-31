@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
@@ -24,6 +25,8 @@ import 'package:dio/dio.dart' as d;
 import 'package:provider/provider.dart';
 import '../../../view_model/user_view_model.dart';
 import 'package:jebby/Services/analytics_service.dart';
+import 'package:jebby/Views/widgets/transport_options_section.dart';
+import 'package:jebby/model/handoff_window.dart';
 import 'package:jebby/utils/api_headers.dart';
 
 class AddProductScreen extends StatefulWidget {
@@ -80,14 +83,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
       TextEditingController();
   final TextEditingController deliveryChargesController =
       TextEditingController();
+  final TextEditingController _deliveryRadiusController = TextEditingController();
 
   List<dynamic> image_document = [];
 
   int _currentStep = 1;
   late final PageController _pageController;
 
-  int _groupValue = 0;
-  String isDelivery = "0";
+  bool _offersPickup = true;
+  bool _offersDelivery = false;
+  List<HandoffWindow> _handoffWindows = [];
   int _activeImageIndex = 0;
 
   String pasd = DateFormat('yyyy-MM-dd').format(DateTime.now());
@@ -452,12 +457,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
     await prefs.setString('listing_draft_subcategory', sub_dropdownvalue);
     await prefs.setString('listing_draft_pasd', pasd);
     await prefs.setString('listing_draft_paed', paed);
-    await prefs.setInt('listing_draft_group', _groupValue);
     await prefs.setString('listing_draft_location', _locationController.text);
     await prefs.setString('listing_draft_lat', locationLat ?? '');
     await prefs.setString('listing_draft_lng', locationLng ?? '');
     await prefs.setString('listing_draft_material', materialValue);
     await prefs.setString('listing_draft_condition', conditionValue);
+    await prefs.setString(
+      'listing_draft_handoff_windows',
+      jsonEncode(_handoffWindows.map((w) => w.toJson()).toList()),
+    );
+    await prefs.setBool('listing_draft_offers_pickup', _offersPickup);
+    await prefs.setBool('listing_draft_offers_delivery', _offersDelivery);
+    await prefs.setString('listing_draft_delivery_radius', _deliveryRadiusController.text);
     await prefs.setString('listing_draft_finish', finishValue);
     await prefs.setString('listing_draft_style', styleValue);
     await prefs.setString('listing_draft_year', yearMadeValue);
@@ -509,6 +520,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
     await prefs.remove('listing_draft_pasd');
     await prefs.remove('listing_draft_paed');
     await prefs.remove('listing_draft_group');
+    await prefs.remove('listing_draft_fulfillment_pickup');
+    await prefs.remove('listing_draft_fulfillment_delivery');
+    await prefs.remove('listing_draft_offers_pickup');
+    await prefs.remove('listing_draft_offers_delivery');
+    await prefs.remove('listing_draft_delivery_radius');
+    await prefs.remove('listing_draft_handoff_windows');
     await prefs.remove('listing_draft_location');
     await prefs.remove('listing_draft_lat');
     await prefs.remove('listing_draft_lng');
@@ -538,8 +555,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
         prefs.getString('listing_draft_subcategory') ?? sub_dropdownvalue;
     pasd = prefs.getString('listing_draft_pasd') ?? pasd;
     paed = prefs.getString('listing_draft_paed') ?? paed;
-    _groupValue = prefs.getInt('listing_draft_group') ?? 0;
-    isDelivery = _groupValue == 1 ? "1" : "0";
+    _offersPickup = prefs.getBool('listing_draft_offers_pickup') ?? true;
+    _offersDelivery = prefs.getBool('listing_draft_offers_delivery') ?? false;
+    _deliveryRadiusController.text =
+        prefs.getString('listing_draft_delivery_radius') ?? '';
+    final windowsJson = prefs.getString('listing_draft_handoff_windows');
+    if (windowsJson != null && windowsJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(windowsJson) as List<dynamic>;
+        _handoffWindows = decoded
+            .map(
+              (entry) => HandoffWindow.fromJson(
+                Map<String, dynamic>.from(entry as Map),
+              ),
+            )
+            .toList();
+      } catch (_) {
+        _handoffWindows = [];
+      }
+    } else {
+      _handoffWindows = [];
+    }
     _locationController.text = prefs.getString('listing_draft_location') ?? '';
     final lat = prefs.getString('listing_draft_lat');
     final lng = prefs.getString('listing_draft_lng');
@@ -772,6 +808,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
       _showError(ParsedUsAddress.selectFromSuggestionsMessage);
       return false;
     }
+    if (!_offersPickup && !_offersDelivery) {
+      _showError('Enable pickup and/or delivery');
+      return false;
+    }
+    if (_offersDelivery) {
+      final radius = int.tryParse(_deliveryRadiusController.text.trim());
+      if (radius == null || radius <= 0) {
+        _showError('Please enter a delivery radius (miles)');
+        return false;
+      }
+    }
+    if (_handoffWindows.isEmpty) {
+      _showError('Please add at least one handoff window');
+      return false;
+    }
     return true;
   }
 
@@ -863,7 +914,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 : deliveryChargesController.text.toString(),
         "specifications": specsController.text.toString(),
         "description": descriptionController.text.toString(),
-        "is_delivery": isDelivery == "1" ? 1 : 0,
+        "offers_pickup": _offersPickup ? 1 : 0,
+        "offers_delivery": _offersDelivery ? 1 : 0,
+        "delivery_radius_miles": _deliveryRadiusController.text.trim().isEmpty
+            ? null
+            : _deliveryRadiusController.text.trim(),
+        "handoff_windows": jsonEncode(_handoffWindows.map((w) => w.toJson()).toList()),
         "available_from": pasd,
         "available_to": paed,
         "address": _locationController.text.trim(),
@@ -1315,20 +1371,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
             keyboardType: TextInputType.number,
             prefixIcon: Icons.lock_outline,
           ),
-          const SizedBox(height: 16),
-          _fieldLabel('Delivery Fee (optional)'),
-          const SizedBox(height: 4),
-          Text(
-            'You can charge for delivery.',
-            style: GoogleFonts.inter(fontSize: 12, color: Colors.black45),
-          ),
-          const SizedBox(height: 8),
-          _textField(
-            controller: deliveryChargesController,
-            hint: '0',
-            keyboardType: TextInputType.number,
-            prefixIcon: Icons.local_shipping_outlined,
-          ),
         ],
       ),
     );
@@ -1383,21 +1425,21 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     : null,
           ),
           const SizedBox(height: 16),
-          _fieldLabel('Delivery Type'),
-          const SizedBox(height: 8),
-          Container(
-            height: 48,
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Row(
-              children: [
-                _deliverySegment('Free Pickup', 0),
-                _deliverySegment('Delivery', 1),
-              ],
-            ),
+          TransportOptionsSection(
+            pickupEnabled: _offersPickup,
+            deliveryEnabled: _offersDelivery,
+            deliveryFeeController: deliveryChargesController,
+            radiusController: _deliveryRadiusController,
+            windows: _handoffWindows,
+            onPickupChanged: (value) => setState(() {
+              _offersPickup = value;
+              if (!value && !_offersDelivery) _offersDelivery = true;
+            }),
+            onDeliveryChanged: (value) => setState(() {
+              _offersDelivery = value;
+              if (!value && !_offersPickup) _offersPickup = true;
+            }),
+            onWindowsChanged: (windows) => setState(() => _handoffWindows = windows),
           ),
           const SizedBox(height: 16),
           _fieldLabel('Listing location'),
@@ -1476,8 +1518,13 @@ class _AddProductScreenState extends State<AddProductScreen> {
   }
 
   Widget _buildStep5Review() {
-    final deliveryLabel =
-        _groupValue == 0 ? 'Free Pickup' : 'Delivery';
+    final transportParts = <String>[];
+    if (_offersPickup) transportParts.add('Pickup & Return');
+    if (_offersDelivery) transportParts.add('Delivery & Retrieval');
+    final deliveryLabel = transportParts.join(' · ');
+    final handoffWindowsLabel = _handoffWindows.isEmpty
+        ? 'None added'
+        : _handoffWindows.map((window) => window.displayRange).join(', ');
     final dateRange =
         '${DateFormat('MMM d, yyyy').format(_availabilityStart())} – ${DateFormat('MMM d, yyyy').format(_availabilityEnd())}';
 
@@ -1564,10 +1611,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
               'Security Deposit',
               '\$${SecurityDepositeController.text.isEmpty ? '0' : SecurityDepositeController.text}',
             ),
-            _reviewRow(
-              'Delivery Fee',
-              '\$${deliveryChargesController.text.isEmpty ? '0' : deliveryChargesController.text}',
-            ),
           ]),
           const SizedBox(height: 12),
           _reviewSection('Availability', [
@@ -1582,8 +1625,22 @@ class _AddProductScreenState extends State<AddProductScreen> {
             _reviewRow('Year Made', yearMadeValue),
           ]),
           const SizedBox(height: 12),
-          _reviewSection('Delivery', [
-            _reviewRow('Type', deliveryLabel),
+          _reviewSection('Transport', [
+            _reviewRow('Options', deliveryLabel),
+            if (_offersDelivery) ...[
+              _reviewRow(
+                'Delivery fee',
+                '\$${deliveryChargesController.text.isEmpty ? '0' : deliveryChargesController.text}',
+              ),
+              _reviewRow(
+                'Delivery radius',
+                _deliveryRadiusController.text.trim().isEmpty
+                    ? '—'
+                    : '${_deliveryRadiusController.text.trim()} mi',
+              ),
+            ],
+            if (_offersPickup || _offersDelivery)
+              _reviewRow('Handoff windows', handoffWindowsLabel),
             if (_locationController.text.trim().isNotEmpty)
               _reviewRow('Listing location', _locationController.text.trim()),
           ]),
@@ -1643,35 +1700,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _deliverySegment(String label, int value) {
-    final selected = _groupValue == value;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _groupValue = value;
-            isDelivery = value == 1 ? "1" : "0";
-          });
-        },
-        child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? _primaryGold : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : Colors.black87,
-            ),
-          ),
-        ),
       ),
     );
   }

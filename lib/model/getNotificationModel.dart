@@ -36,6 +36,7 @@ class Data {
   int? seen;
   int? userId;
   int? productId;
+  int? orderId;
 
   Data({
     this.id,
@@ -46,6 +47,7 @@ class Data {
     this.seen,
     this.userId,
     this.productId,
+    this.orderId,
   });
 
   Data.fromJson(Map<String, dynamic> json) {
@@ -57,6 +59,9 @@ class Data {
     seen = json['seen'];
     userId = json['user_id'];
     productId = json['product_id'];
+    orderId = json['order_id'] is int
+        ? json['order_id']
+        : int.tryParse('${json['order_id']}');
   }
 
   Map<String, dynamic> toJson() {
@@ -69,6 +74,7 @@ class Data {
     data['seen'] = this.seen;
     data['user_id'] = this.userId;
     data['product_id'] = this.productId;
+    data['order_id'] = this.orderId;
     return data;
   }
 }

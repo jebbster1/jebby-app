@@ -29,7 +29,7 @@ class Data {
   String? content;
   int? senderId;
   int? recipientId;
-  String? timeSent;
+  String? createdAt;
   int? isShow;
   int? productId;
 
@@ -38,7 +38,7 @@ class Data {
     this.content,
     this.senderId,
     this.recipientId,
-    this.timeSent,
+    this.createdAt,
     this.isShow,
     this.productId,
   });
@@ -48,7 +48,7 @@ class Data {
     content = json['content'];
     senderId = json['sender_id'];
     recipientId = json['recipient_id'];
-    timeSent = json['time_sent'];
+    createdAt = json['created_at']?.toString();
     isShow = json['isShow'];
     productId = json['product_id'];
   }
@@ -59,7 +59,7 @@ class Data {
     data['content'] = this.content;
     data['sender_id'] = this.senderId;
     data['recipient_id'] = this.recipientId;
-    data['time_sent'] = this.timeSent;
+    data['created_at'] = this.createdAt;
     data['isShow'] = this.isShow;
     data['product_id'] = this.productId;
     return data;

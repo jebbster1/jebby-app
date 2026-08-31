@@ -10,6 +10,7 @@ import 'package:jebby/Views/screens/vendors/stripe_requirements_modal.dart';
 import 'package:provider/provider.dart';
 
 import '../../../Services/provider/sign_in_provider.dart';
+import '../../../utils/order_status.dart';
 import '../../../model/user_model.dart';
 import '../../../view_model/user_view_model.dart';
 
@@ -706,7 +707,7 @@ class _TransactionListScreenState extends State<TransactionListScreen>
     }
 
     final raw = ApiRepository.shared.getAllOrdersByVenodrIdList?.data ?? [];
-    final visible = raw.where((e) => e.cancelDate.toString().isEmpty).toList();
+    final visible = raw.where((e) => !OrderStatus.isTerminal(e.orderStatus)).toList();
 
     if (visible.isEmpty) {
       return SliverToBoxAdapter(
@@ -1299,6 +1300,7 @@ class _TransactionListScreenState extends State<TransactionListScreen>
                       child: _buildBalanceItem(
                         'Pending',
                         '\$${pendingTotal.toStringAsFixed(2)}',
+                        subtitle: 'Future payouts',
                       ),
                     ),
                   ],
@@ -1326,7 +1328,7 @@ class _TransactionListScreenState extends State<TransactionListScreen>
     );
   }
 
-  Widget _buildBalanceItem(String label, String amount) {
+  Widget _buildBalanceItem(String label, String amount, {String? subtitle}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -1345,6 +1347,17 @@ class _TransactionListScreenState extends State<TransactionListScreen>
               color: _subtitleGrey,
             ),
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w400,
+                color: _subtitleGrey.withValues(alpha: 0.85),
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           Text(
             amount,

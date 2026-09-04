@@ -1,12 +1,9 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:jebby/utils/api_headers.dart';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:jebby/views/screens/agreements/jebby_about.dart';
+import 'package:jebby/constants/app_url.dart';
+import 'package:jebby/repositories/api_repository.dart';
+import 'package:jebby/views/screens/agreements/about_app.dart';
 import 'package:jebby/views/screens/agreements/privacy_policy.dart';
 import 'package:jebby/view_models/auth_view_model.dart';
 import 'package:jebby/view_models/onboarding_controller.dart';
@@ -49,48 +46,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future getProductsApi(id) async {
     try {
-      final response = await http.get(
-        Uri.parse('${Url}/UserProfileGetById/${id}'),
-        headers: await ApiHeaders.json(),
-      );
-      var data = jsonDecode(response.body.toString());
-      datalength = data["data"].length;
-
-      if (data["data"].length != 0) {
-        if (mounted) {
-          setState(() {
-            imagesapi = ProfileImage.sanitizePath(
-              data["data"][0]["profile_image"]?.toString(),
-            );
-            nameapi = data["data"][0]["name"].toString();
-            emailapi = data["data"][0]["email"].toString();
-            isLoadingImage = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            isLoadingImage = false;
-          });
-        }
+      final row = await ApiRepository.shared.fetchUserProfileRow(id.toString());
+      if (row == null) {
+        if (mounted) setState(() => isLoadingImage = false);
+        return null;
       }
 
-      if (response.statusCode == 200) {
-        return data;
-      } else {
-        if (mounted) {
-          setState(() {
-            isLoadingImage = false;
-          });
-        }
-        return "No data";
-      }
-    } catch (error) {
       if (mounted) {
         setState(() {
+          datalength = 1;
+          imagesapi = ProfileImage.sanitizePath(row['profile_image']?.toString());
+          nameapi = row['name']?.toString() ?? '';
+          emailapi = row['email']?.toString() ?? '';
           isLoadingImage = false;
         });
       }
+      return {'data': [row]};
+    } catch (error) {
+      if (mounted) setState(() => isLoadingImage = false);
       return "No data";
     }
   }
@@ -106,7 +79,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? fullname;
   String? email;
   String? role;
-  String Url = dotenv.env['baseUrlM'] ?? 'No url found';
+  String Url = AppUrl.baseUrlM;
+
+  Future<void> _openEditProfile() async {
+    final updated = await Get.to(() => const EditProfileScreen());
+    if (updated != true || !mounted) return;
+
+    await context.read<UserViewModel>().getUpdatedUser();
+    if (id != null) {
+      await getProductsApi(id);
+    }
+    if (mounted) setState(() {});
+  }
 
   Future<UserModel> getUserDate() => UserViewModel().getUser();
 
@@ -358,7 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsTileData(
                 icon: Icons.person_outline,
                 label: 'Edit Profile',
-                onTap: () => Get.to(() => EditProfileScreen()),
+                onTap: _openEditProfile,
               ),
               if (!isSocialAccount)
                 _SettingsTileData(
@@ -390,7 +374,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsTileData(
                 icon: Icons.info_outline,
                 label: 'About App',
-                onTap: () => Get.to(() => JebbyAboutScreen()),
+                onTap: () => Get.to(() => const AboutAppScreen()),
               ),
               _SettingsTileData(
                 icon: Icons.help_outline,
@@ -431,15 +415,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       children: [
         GestureDetector(
-          onTap: () => Get.to(() => EditProfileScreen()),
+          onTap: _openEditProfile,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
               ProfileImage.circularAvatar(
                 radius: 44,
                 baseUrl: Url,
-                imagePath: imagesapi,
-                isLoading: isLoadingImage,
+                imagePath: ProfileImage.isValidPath(usp.profileImage)
+                    ? usp.profileImage!
+                    : imagesapi,
+                isLoading:
+                    isLoadingImage && !ProfileImage.isValidPath(usp.profileImage),
               ),
               Positioned(
                 right: 0,

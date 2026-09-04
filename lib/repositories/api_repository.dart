@@ -1810,6 +1810,155 @@ class ApiRepository extends ChangeNotifier {
     );
     return completer.future;
   }
+
+  /// Fetches user profile by id and caches the result in [getUserCredentialModelList].
+  Future<GetUserCredentialModel?> fetchUserProfile(String id) async {
+    try {
+      final response = await http.get(
+        Uri.parse(AppUrl.userCredential + id.toString()),
+        headers: await ApiHeaders.json(),
+      );
+      if (response.statusCode != 200) return null;
+      final model = GetUserCredentialModel.fromJson(jsonDecode(response.body));
+      getUserCredential(model);
+      return model;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Returns the first profile row as a map, or null when unavailable.
+  Future<Map<String, dynamic>?> fetchUserProfileRow(String id) async {
+    final model = await fetchUserProfile(id);
+    if (model?.data == null || model!.data!.isEmpty) return null;
+    return model.data!.first.toJson();
+  }
+
+  /// Returns the full decoded profile API body.
+  Future<Map<String, dynamic>?> fetchUserProfileBody(String id) async {
+    try {
+      final response = await http.get(
+        Uri.parse(AppUrl.userCredential + id.toString()),
+        headers: await ApiHeaders.json(),
+      );
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return null;
+      final body = Map<String, dynamic>.from(decoded);
+      try {
+        getUserCredential(GetUserCredentialModel.fromJson(body));
+      } catch (_) {}
+      return body;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<dio.Response<dynamic>> submitUserProfileMultipart(
+    dio.FormData formData, {
+    required bool isUpdate,
+  }) async {
+    return dio.Dio().post(
+      isUpdate ? AppUrl.userProfileUpdate : AppUrl.userProfileInsert,
+      data: formData,
+      options: dio.Options(
+        contentType: 'multipart/form-data',
+        headers: await ApiHeaders.authOnly(),
+      ),
+    );
+  }
+
+  Future<dio.Response<dynamic>> insertProductMultipart(
+    dio.FormData formData,
+  ) async {
+    return dio.Dio().post(
+      AppUrl.productInsert,
+      data: formData,
+      options: dio.Options(
+        contentType: 'multipart/form-data',
+        headers: await ApiHeaders.authOnly(),
+      ),
+    );
+  }
+
+  Future<bool> uploadProductImages({
+    required String productId,
+    required List<dio.MultipartFile> files,
+    required String insertAtJson,
+  }) async {
+    if (files.isEmpty) return true;
+    try {
+      final formData = dio.FormData();
+      formData.fields
+        ..add(MapEntry('id', productId))
+        ..add(MapEntry('insert_at', insertAtJson));
+      for (final part in files) {
+        formData.files.add(MapEntry('file', part));
+      }
+      final response = await dio.Dio().post(
+        AppUrl.productUpdateImage,
+        data: formData,
+        options: dio.Options(
+          contentType: 'multipart/form-data',
+          headers: await ApiHeaders.authOnly(),
+        ),
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteProductImageSilently(
+    String imageId, {
+    required String productId,
+  }) async {
+    try {
+      final request = json.encode(<String, dynamic>{
+        'id': imageId,
+        'product_id': productId,
+      });
+      final response = await http.post(
+        Uri.parse(AppUrl.productDeleteImage),
+        body: request,
+        headers: await ApiHeaders.json(),
+      );
+      if (response.statusCode == 200) {
+        getdeletedProductImage(true);
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<bool> updateFcmToken({
+    required String userId,
+    required String fcmToken,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse(AppUrl.updateFCMToken),
+        headers: await ApiHeaders.json(),
+        body: json.encode({
+          'user_id': userId,
+          'fcm_token': fcmToken,
+        }),
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchFeeValues() async {
+    final response = await http.get(Uri.parse(AppUrl.getValuesUrl));
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) return data;
+      return Map<String, dynamic>.from(data as Map);
+    }
+    throw Exception('Failed to fetch fee values');
+  }
 }
 
 class notiTimer with ChangeNotifier {

@@ -1,13 +1,11 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:get/get.dart';
-import 'package:http/http.dart' as http;
-import 'package:jebby/utils/api_headers.dart';
+import 'package:jebby/constants/app_url.dart';
 import 'package:jebby/utils/api_datetime.dart';
 import 'package:jebby/constants/color.dart';
 import 'package:jebby/utils/profile_image.dart';
+import 'package:provider/provider.dart';
 
 import '../../../models/user_model.dart';
 import 'package:jebby/repositories/api_repository.dart';
@@ -37,7 +35,7 @@ class UserProfileScreen extends StatefulWidget {
 }
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
-  String Url = dotenv.env['baseUrlM'] ?? "";
+  String Url = AppUrl.baseUrlM;
 
   String? token;
   String? id;
@@ -237,7 +235,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 shape: const CircleBorder(),
                 child: InkWell(
                   customBorder: const CircleBorder(),
-                  onTap: () => Get.to(() => EditProfileScreen()),
+                  onTap: () async {
+                    final updated = await Get.to(() => const EditProfileScreen());
+                    if (updated == true && mounted) {
+                      await _reloadAfterEdit();
+                    }
+                  },
                   child: const SizedBox(
                     width: 40,
                     height: 40,
@@ -670,25 +673,34 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  Future getProductsApi(dynamic profileId) async {
-    final response = await http.get(
-      Uri.parse('${Url}/UserProfileGetById/${profileId}'),
-      headers: await ApiHeaders.json(),
-    );
-    var data = jsonDecode(response.body);
+  Future<void> _reloadAfterEdit() async {
+    if (!_isCurrentUserProfile || id == null) return;
+
+    final usp = context.read<UserViewModel>();
+    await usp.getUpdatedUser();
+    await getProductsApi(id!);
+    if (!mounted) return;
+
     setState(() {
-      if (data["data"].length != 0) {
-        final profileImage = data["data"][0]["profile_image"]?.toString().trim() ?? '';
-        imagesapi = ProfileImage.sanitizePath(profileImage);
-        final coverImage = data["data"][0]["cover_image"]?.toString().trim() ?? '';
-        back_image_api = ProfileImage.sanitizePath(coverImage);
-        final apiRole = data["data"][0]["role"]?.toString();
-        if (apiRole != null && apiRole.trim().isNotEmpty) {
-          role = apiRole;
-        }
-        addressapi = data["data"][0]["address"]?.toString() ?? "";
-        phoneapi = data["data"][0]["phone_number"]?.toString() ?? "";
+      fullname = usp.name ?? fullname;
+    });
+  }
+
+  Future getProductsApi(dynamic profileId) async {
+    final row = await ApiRepository.shared.fetchUserProfileRow(profileId.toString());
+    if (row == null || !mounted) return;
+
+    setState(() {
+      final profileImage = row['profile_image']?.toString().trim() ?? '';
+      imagesapi = ProfileImage.sanitizePath(profileImage);
+      final coverImage = row['cover_image']?.toString().trim() ?? '';
+      back_image_api = ProfileImage.sanitizePath(coverImage);
+      final apiRole = row['role']?.toString();
+      if (apiRole != null && apiRole.trim().isNotEmpty) {
+        role = apiRole;
       }
+      addressapi = row['address']?.toString() ?? '';
+      phoneapi = row['phone_number']?.toString() ?? '';
     });
   }
 }

@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:jebby/views/screens/home/filter.dart';
 import 'package:jebby/views/screens/shared/chat.dart';
 import 'package:jebby/constants/color.dart';
@@ -11,14 +9,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'bottom_nav_controller.dart';
 import 'package:jebby/views/screens/home/featured_categories.dart';
 import 'package:jebby/views/screens/home/home.dart';
-import 'package:http/http.dart' as http;
-import 'package:jebby/utils/api_headers.dart';
-
 import 'package:jebby/views/screens/shared/settings.dart';
 import 'package:jebby/views/screens/vendors/my_products.dart';
 import 'package:jebby/views/screens/shared/notifications.dart';
 import 'package:jebby/views/screens/vendors/vendor_home.dart';
-import 'package:jebby/constants/app_url.dart';
 import 'package:jebby/repositories/api_repository.dart';
 import 'package:jebby/utils/profile_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -465,83 +459,34 @@ class _MainScreenState extends State<MainScreen> {
   var nameapi = "";
   var locationapi = "";
   var emailapi = "";
-  String Url = dotenv.env['baseUrlM'] ?? 'No url found';
 
   Future getProductsApi(String ids) async {
-    final response = await http.get(
-      Uri.parse('${Url}/UserProfileGetById/${ids}'),
-      headers: await ApiHeaders.json(),
-    );
-    var data = jsonDecode(response.body.toString());
+    final row = await ApiRepository.shared.fetchUserProfileRow(ids);
+    if (row == null) return;
 
-    if (data["data"].length != 0) {}
-
-    if (data["data"].length != 0 && mounted) {
+    if (mounted) {
       setState(() {
-        imagesapi = ProfileImage.sanitizePath(
-          data["data"][0]["profile_image"]?.toString(),
-        );
-        nameapi = data["data"][0]["name"].toString();
-        emailapi = data["data"][0]["email"].toString();
-        locationapi = data["data"][0]["address"].toString();
+        imagesapi = ProfileImage.sanitizePath(row['profile_image']?.toString());
+        nameapi = row['name']?.toString() ?? '';
+        emailapi = row['email']?.toString() ?? '';
+        locationapi = row['address']?.toString() ?? '';
       });
     }
-    if (response.statusCode == 200) {
-      SharedPreferences updatePrefrences =
-          await SharedPreferences.getInstance();
-      if (data["data"].length != 0 && mounted) {
-        setState(() {
-          updatePrefrences.setString(
-            'fullname',
-            data["data"][0]["name"].toString(),
-          );
-          updatePrefrences.setString(
-            'email',
-            data["data"][0]["email"].toString(),
-          );
-          updatePrefrences.setString(
-            'profileImage',
-            ProfileImage.sanitizePath(
-              data["data"][0]["profile_image"]?.toString(),
-            ),
-          );
-          updatePrefrences.setString(
-            'address',
-            data["data"][0]["address"].toString(),
-          );
-          updatePrefrences.setString(
-            'latitude',
-            data["data"][0]["latitude"].toString(),
-          );
-          updatePrefrences.setString(
-            'longitude',
-            data["data"][0]["longitude"].toString(),
-          );
-          updatePrefrences.setString(
-            'phoneNumber',
-            data["data"][0]['phone_number'].toString(),
-          );
-        });
-      }
 
-      return data;
-    } else {
-      return "No data";
-    }
-  }
-
-  Future getCategoryList() async {
-    final response = await http.get(
-      Uri.parse(AppUrl.categoryGetUrl),
-      headers: await ApiHeaders.json(),
-    );
-    var data = jsonDecode(response.body.toString());
-
-    if (response.statusCode == 200) {
-      return data;
-    } else {
-      return "No data";
-    }
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      prefs.setString('fullname', row['name']?.toString() ?? '');
+      prefs.setString('email', row['email']?.toString() ?? '');
+      prefs.setString(
+        'profileImage',
+        ProfileImage.sanitizePath(row['profile_image']?.toString()),
+      );
+      prefs.setString('address', row['address']?.toString() ?? '');
+      prefs.setString('latitude', row['latitude']?.toString() ?? '');
+      prefs.setString('longitude', row['longitude']?.toString() ?? '');
+      prefs.setString('phoneNumber', row['phone_number']?.toString() ?? '');
+    });
   }
 }
 

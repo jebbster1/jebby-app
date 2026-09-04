@@ -9,8 +9,9 @@ class AboutAppScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const CmsPolicyScreen(
-      slug: CmsSlugs.maintenance,
-      title: 'Maintenance & Warranties',
+      slug: CmsSlugs.aboutApp,
+      title: 'About App',
+      emptyMessage: 'Unable to load about app content. Please try again later.',
     );
   }
 }

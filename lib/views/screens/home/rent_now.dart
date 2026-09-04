@@ -13,14 +13,13 @@ import 'package:jebby/views/screens/profile/user_profile.dart';
 import 'package:jebby/views/widgets/address_autocomplete_field.dart';
 import 'package:jebby/utils/google_places_address.dart';
 import 'package:jebby/utils/profile_image.dart';
-import 'package:jebby/services/fee_values_service.dart';
+import 'package:jebby/repositories/api_repository.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../../../models/user_model.dart';
 import '../../../models/handoff_window.dart';
 import '../../../constants/app_url.dart';
-import 'package:jebby/repositories/api_repository.dart';
 
 import '../../../view_models/user_view_model.dart';
 import '../../../utils/delivery_radius.dart';
@@ -256,7 +255,7 @@ class _RentNowScreenState extends State<RentNowScreen> {
 
   Future<void> _loadData() async {
     try {
-      final data = await FeeValuesService.fetchValues();
+      final data = await ApiRepository.shared.fetchFeeValues();
       setState(() {
         _data = data;
         array = _data['data'];

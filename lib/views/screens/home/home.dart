@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +8,6 @@ import 'package:jebby/services/provider/sign_in_provider.dart';
 import 'package:jebby/views/screens/home/product_details.dart';
 import 'package:jebby/views/screens/navigation/bottom_nav_controller.dart';
 import 'package:jebby/views/screens/home/category.dart';
-import 'package:http/http.dart' as http;
 import '../../../models/get_featured_products_model.dart' as datamodel;
 
 import 'package:jebby/views/screens/shared/notifications.dart';
@@ -1002,16 +1000,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-  }
-
-  Future<CategoryList> getCategoryList() async {
-    dynamic response = await http.get(Uri.parse(AppUrl.categoryGetUrl));
-    if (response.statusCode == 200) {
-      var data = jsonDecode(response.body);
-      return CategoryList.fromJson(data);
-    } else {
-      throw Exception("Error");
-    }
   }
 }
 

@@ -2,11 +2,9 @@ import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:http/http.dart' as http;
 import 'package:get/get.dart';
 
-import '../utils/api_headers.dart';
-import '../constants/app_url.dart';
+import '../repositories/api_repository.dart';
 import '../view_models/user_view_model.dart';
 import '../views/screens/reservations/reservation_detail.dart';
 
@@ -122,20 +120,16 @@ class FCMService {
     try {
       final user = await UserViewModel().getUser();
       print('Updating FCM token for user: ${user.id}');
-      
-      final response = await http.post(
-        Uri.parse(AppUrl.updateFCMToken),
-        headers: await ApiHeaders.json(),
-        body: json.encode({
-          'user_id': user.id,
-          'fcm_token': token,
-        }),
+
+      final ok = await ApiRepository.shared.updateFcmToken(
+        userId: user.id.toString(),
+        fcmToken: token,
       );
 
-      if (response.statusCode == 200) {
+      if (ok) {
         print('FCM token updated successfully');
       } else {
-        print('Failed to update FCM token: ${response.body}');
+        print('Failed to update FCM token');
       }
     } catch (e) {
       print('Error updating FCM token: $e');

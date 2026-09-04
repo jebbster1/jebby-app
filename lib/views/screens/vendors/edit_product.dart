@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,7 +20,6 @@ import '../../../models/user_model.dart';
 import '../../../constants/app_url.dart';
 import 'package:jebby/repositories/api_repository.dart';
 import 'package:jebby/views/widgets/address_autocomplete_field.dart';
-import 'package:jebby/utils/api_headers.dart';
 import 'package:jebby/utils/google_places_address.dart';
 import 'package:jebby/utils/product_upload_filename.dart';
 import 'package:jebby/utils/show_snackbar.dart';
@@ -763,88 +761,41 @@ class _EditProductScreenState extends State<EditProductScreen> {
     } catch (_) {}
   }
 
-  Future<GetProductsByProductId> getProductsById(
-    onResponse(GetProductsByProductId List),
-    onError(error),
-    id,
-  ) async {
-    final response = await http.get(
-      Uri.parse(AppUrl.getProductsByID + id),
-      headers: await ApiHeaders.json(),
-    );
-    if (response.statusCode == 200) {
-      try {
-        var data = GetProductsByProductId.fromJson(jsonDecode(response.body));
-
-        ApiRepository.shared.getProductByProductId(data);
-        onResponse(data);
-
-        return data;
-      } catch (error) {
-        onError(error.toString());
-      }
-    } else if (response.statusCode == 400) {
-      onError("You are not in Range");
-    } else if (response.statusCode == 500) {
-      onError("Internal Server Error");
-    }
-
-    return GetProductsByProductId();
+  Future<GetProductsByProductId> _reloadProduct(
+    void Function(GetProductsByProductId) onResponse,
+    void Function(dynamic) onError,
+    String id,
+  ) {
+    return ApiRepository.shared.getProductsById(onResponse, onError, id);
   }
 
   Future<ProductDeleteImageModel> deleteProductImage(id) async {
     setState(() {
       imgLoader = true;
     });
-    final request = json.encode(<String, dynamic>{
-      "id": id,
-      "product_id": widget.product_id.toString(),
-    });
-
-    final response = await http.post(
-      Uri.parse(AppUrl.productDeleteImage),
-      body: request,
-      headers: await ApiHeaders.json(),
+    await ApiRepository.shared.deleteProductImage(
+      id,
+      productId: widget.product_id.toString(),
     );
-    if (response.statusCode == 200) {
-      try {
-        getProductsById(
-          (List) => {
-            if (this.mounted)
-              {
-                if (List.data?.length == 0)
-                  {}
-                else
-                  {
-                    setState(() {
-                      imgLoader = false;
-                    }),
-                  },
-              },
-          },
-          (error) {},
-          widget.product_id.toString(),
-        );
-      } catch (error) {
-      }
-    } else if (response.statusCode == 400) {
-    } else if (response.statusCode == 500) {
-    }
-
+    await _reloadProduct(
+      (list) {
+        if (mounted && (list.data?.isNotEmpty ?? false)) {
+          setState(() {
+            imgLoader = false;
+          });
+        }
+      },
+      (error) {},
+      widget.product_id.toString(),
+    );
     return ProductDeleteImageModel();
   }
 
   Future<bool> _deleteRemoteImageSilently(String imageId) async {
-    final request = json.encode(<String, dynamic>{
-      "id": imageId,
-      "product_id": widget.product_id.toString(),
-    });
-    final response = await http.post(
-      Uri.parse(AppUrl.productDeleteImage),
-      body: request,
-      headers: await ApiHeaders.json(),
+    return ApiRepository.shared.deleteProductImageSilently(
+      imageId,
+      productId: widget.product_id.toString(),
     );
-    return response.statusCode == 200;
   }
 
   Future<bool> _syncProductImages() async {
@@ -875,23 +826,12 @@ class _EditProductScreenState extends State<EditProductScreen> {
           );
         }
 
-        final formData = d.FormData();
-        formData.fields
-          ..add(MapEntry('id', widget.product_id.toString()))
-          ..add(MapEntry('insert_at', jsonEncode(_uploadInsertAt)));
-        for (final part in image_document) {
-          formData.files.add(MapEntry('file', part));
-        }
-
-        final response = await d.Dio().post(
-          AppUrl.productUpdateImage,
-          data: formData,
-          options: d.Options(
-            contentType: 'multipart/form-data',
-            headers: await ApiHeaders.authOnly(),
-          ),
+        final uploaded = await ApiRepository.shared.uploadProductImages(
+          productId: widget.product_id.toString(),
+          files: List<d.MultipartFile>.from(image_document),
+          insertAtJson: jsonEncode(_uploadInsertAt),
         );
-        if (response.statusCode != 200) return false;
+        if (!uploaded) return false;
 
         imageFileList.clear();
         imagesPath.clear();
@@ -924,7 +864,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
           imagesPath = []; //for displaying images at grid
           imageFileList = []; //for displaying images at grid
         });
-        getProductsById(
+        _reloadProduct(
           (list) {
             if (this.mounted) {
               if (list.status == 0) {

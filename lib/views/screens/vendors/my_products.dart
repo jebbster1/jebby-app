@@ -1,9 +1,6 @@
-import 'dart:convert';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
 import 'package:jebby/views/screens/vendors/product_details.dart';
@@ -19,8 +16,6 @@ import '../../../models/user_model.dart';
 import 'package:jebby/repositories/api_repository.dart';
 import '../../../view_models/user_view_model.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'package:jebby/utils/api_headers.dart';
 
 class MyProductsScreen extends StatefulWidget {
   final side;
@@ -30,7 +25,6 @@ class MyProductsScreen extends StatefulWidget {
 }
 
 class _MyProductsScreenState extends State<MyProductsScreen> {
-  String Url = dotenv.env['baseUrlM'] ?? 'No url found';
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -71,12 +65,9 @@ class _MyProductsScreenState extends State<MyProductsScreen> {
 
   var profile = [];
   Future getProductsApi(id) async {
-    final response = await http.get(
-      Uri.parse('${Url}/UserProfileGetById/${id}'),
-      headers: await ApiHeaders.json(),
-    );
-    var data = jsonDecode(response.body.toString());
-    profile = data['data'];
+    final body = await ApiRepository.shared.fetchUserProfileBody(id.toString());
+    if (body == null) return;
+    profile = body['data'] ?? [];
   }
 
   getVendorProducts(id) {

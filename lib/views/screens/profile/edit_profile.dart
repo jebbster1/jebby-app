@@ -1,16 +1,10 @@
-import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:dio/dio.dart' as d;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'package:jebby/utils/api_headers.dart';
-import 'package:dio/dio.dart' as d;
-
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:jebby/views/widgets/address_autocomplete_field.dart';
@@ -18,6 +12,7 @@ import 'package:jebby/utils/google_places_address.dart';
 import 'package:jebby/utils/profile_image.dart';
 import 'package:jebby/utils/show_snackbar.dart';
 
+import 'package:jebby/constants/app_url.dart';
 import 'package:jebby/models/user_model.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
@@ -37,7 +32,6 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  String Url = dotenv.env['baseUrlM'] ?? 'No url found';
   File? _image;
   File? _image1;
 
@@ -142,8 +136,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  void _finishProfileSave() {
-    Get.back();
+  Future<void> _finishProfileSave() async {
+    if (id != null && id!.isNotEmpty && mounted) {
+      final row = await ApiRepository.shared.fetchUserProfileRow(id!);
+      if (row != null) {
+        await context.read<UserViewModel>().syncProfileFromRow(row);
+      }
+    }
+    if (!mounted) return;
+    Get.back(result: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       showAppSuccessSnackbar('Profile updated successfully.');
     });
@@ -400,7 +401,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                                 fit: BoxFit.cover,
                                               )
                                             : Image.network(
-                                                ProfileImage.resolveUrl(Url, back_image_api)!,
+                                                ProfileImage.resolveUrl(AppUrl.baseUrlM, back_image_api)!,
                                                 fit: BoxFit.cover,
                                                 loadingBuilder: (context, child, loadingProgress) {
                                                   if (loadingProgress == null) return child;
@@ -465,7 +466,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                             )
                                           : ProfileImage.circularAvatar(
                                               radius: 50,
-                                              baseUrl: Url,
+                                              baseUrl: AppUrl.baseUrlM,
                                               imagePath: imagesapi,
                                             ),
                                       Positioned(
@@ -621,17 +622,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 });
                                 log(formData.fields.toString());
 
-                                d.Response response = await Dio().post(
-                                  "${Url}/UserProfileInsert",
-                                  data: formData,
-                                  options: d.Options(
-                                    contentType: 'multipart/form-data',
-                                    headers: await ApiHeaders.authOnly(),
-                                  ),
+                                d.Response response =
+                                    await ApiRepository.shared
+                                        .submitUserProfileMultipart(
+                                  formData,
+                                  isUpdate: false,
                                 );
                                 log(response.statusCode.toString());
                                 Loader.hide();
-                                _finishProfileSave();
+                                await _finishProfileSave();
                                 //       content: new Text(
                               }
                               // client profile insert
@@ -658,17 +657,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 });
                                 log(formData.fields.toString());
 
-                                d.Response response = await Dio().post(
-                                  "${Url}/UserProfileInsert",
-                                  data: formData,
-                                  options: d.Options(
-                                    contentType: 'multipart/form-data',
-                                    headers: await ApiHeaders.authOnly(),
-                                  ),
+                                d.Response response =
+                                    await ApiRepository.shared
+                                        .submitUserProfileMultipart(
+                                  formData,
+                                  isUpdate: false,
                                 );
                                 log(response.statusCode.toString());
                                 Loader.hide();
-                                _finishProfileSave();
+                                await _finishProfileSave();
                               }
                             }
                           } catch (e) {
@@ -840,17 +837,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               }
                               log(formData.fields.toString());
                             }
-                            d.Response response = await Dio().post(
-                              "${Url}/UserProfileUpdate",
-                              data: formData,
-                              options: d.Options(
-                                contentType: 'multipart/form-data',
-                                headers: await ApiHeaders.authOnly(),
-                              ),
+                            d.Response response =
+                                await ApiRepository.shared
+                                    .submitUserProfileMultipart(
+                              formData,
+                              isUpdate: true,
                             );
                             log(response.statusCode.toString());
                             Loader.hide();
-                            _finishProfileSave();
+                            await _finishProfileSave();
                           } catch (e) {
                             Loader.hide();
                             log("expectation Caugch: 2 " + e.toString());
@@ -992,29 +987,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   var back_image_api = "";
 
   Future getProductsApi(id) async {
-    final response = await http.get(
-      Uri.parse('${Url}/UserProfileGetById/${id}'),
-      headers: await ApiHeaders.json(),
-    );
-    var data = jsonDecode(response.body.toString());
-    log(data.toString());
-    if (data["data"].length != 0) {
-      log(data["data"][0]["id"].toString());
-    }
+    final row = await ApiRepository.shared.fetchUserProfileRow(id.toString());
+    if (row == null) return 'No data';
 
-    setState(() {
-      if (data["data"].length != 0) {
-        final profileImage = data["data"][0]["profile_image"]?.toString().trim() ?? '';
+    log(row.toString());
+    if (mounted) {
+      setState(() {
+        final profileImage = row['profile_image']?.toString().trim() ?? '';
         imagesapi = ProfileImage.sanitizePath(profileImage);
-        nameapi = data["data"][0]["name"].toString();
-        _nameController.text = data["data"][0]["name"].toString();
-        _emailController.text = data["data"][0]["email"].toString();
-        _locationController.text = data["data"][0]["address"].toString();
-        final coverImage = data["data"][0]["cover_image"]?.toString().trim() ?? '';
+        nameapi = row['name']?.toString() ?? '';
+        _nameController.text = row['name']?.toString() ?? '';
+        _emailController.text = row['email']?.toString() ?? '';
+        _locationController.text = row['address']?.toString() ?? '';
+        final coverImage = row['cover_image']?.toString().trim() ?? '';
         back_image_api = ProfileImage.sanitizePath(coverImage);
-        Latitiude = data["data"][0]["latitude"].toString();
-        Longitude = data["data"][0]["longitude"].toString();
-        final addressText = data["data"][0]["address"]?.toString() ?? '';
+        Latitiude = row['latitude']?.toString();
+        Longitude = row['longitude']?.toString();
+        final addressText = row['address']?.toString() ?? '';
         if (addressText.isNotEmpty) {
           _resolvedAddress = ParsedUsAddress(
             formattedAddress: addressText,
@@ -1022,52 +1011,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             longitude: double.tryParse(Longitude?.toString() ?? ''),
           );
         }
-      }
-    });
-    if (response.statusCode == 200) {
-      if (data["data"].length != 0) {
-        SharedPreferences updatePrefrences =
-            await SharedPreferences.getInstance();
-
-        setState(() {
-          updatePrefrences.setString(
-            'fullname',
-            data["data"][0]["name"].toString(),
-          );
-          updatePrefrences.setString(
-            'email',
-            data["data"][0]["email"].toString(),
-          );
-          updatePrefrences.setString(
-            'profileImage',
-            ProfileImage.sanitizePath(
-              data["data"][0]["profile_image"]?.toString(),
-            ),
-          );
-          updatePrefrences.setString(
-            'address',
-            data["data"][0]["address"].toString(),
-          );
-          updatePrefrences.setString(
-            'latitude',
-            data["data"][0]["latitude"].toString(),
-          );
-          updatePrefrences.setString(
-            'longitude',
-            data["data"][0]["longitude"].toString(),
-          );
-          updatePrefrences.setString(
-            'phoneNumber',
-            data["data"][0]['phone_number'].toString(),
-          );
-        });
-        return data;
-      } else {
-        return "No data";
-      }
+      });
     }
 
-
-
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return row;
+    setState(() {
+      prefs.setString('fullname', row['name']?.toString() ?? '');
+      prefs.setString('email', row['email']?.toString() ?? '');
+      prefs.setString(
+        'profileImage',
+        ProfileImage.sanitizePath(row['profile_image']?.toString()),
+      );
+      prefs.setString('address', row['address']?.toString() ?? '');
+      prefs.setString('latitude', row['latitude']?.toString() ?? '');
+      prefs.setString('longitude', row['longitude']?.toString() ?? '');
+      prefs.setString('phoneNumber', row['phone_number']?.toString() ?? '');
+    });
+    return {'data': [row]};
   }
 }

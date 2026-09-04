@@ -25,8 +25,6 @@ import '../../../view_models/user_view_model.dart';
 import 'package:jebby/services/analytics_service.dart';
 import 'package:jebby/views/widgets/transport_options_section.dart';
 import 'package:jebby/models/handoff_window.dart';
-import 'package:jebby/utils/api_headers.dart';
-
 class AddProductScreen extends StatefulWidget {
   /// When true, step-1 back replaces the stack with [MyProductsScreen].
   final bool popToProductsOnBack;
@@ -929,14 +927,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       };
 
       final formData = d.FormData.fromMap(data);
-      final response = await d.Dio().post(
-        "${Url}/productInsert",
-        data: formData,
-        options: d.Options(
-          contentType: 'multipart/form-data',
-          headers: await ApiHeaders.authOnly(),
-        ),
-      );
+      final response = await ApiRepository.shared.insertProductMultipart(formData);
 
       if (response.toString() == 'Your files uploaded.') {
         await _clearDraft();

@@ -191,6 +191,10 @@ class UserViewModel with ChangeNotifier {
     _address = sp.getString('address');
     _role = normalizeRole(sp.getString('role'));
     _source = sp.getString('source');
+    _profileImage = ProfileImage.sanitizePath(sp.getString('profileImage'));
+    if (_profileImage != null && _profileImage!.isEmpty) _profileImage = null;
+    _latitude = sp.getString('latitude');
+    _longitude = sp.getString('longitude');
     if (_address?.trim().isEmpty == true) {
       _address = null;
     }
@@ -212,6 +216,50 @@ class UserViewModel with ChangeNotifier {
       source: _source,
       isGuest: isGuest,
     );
+  }
+
+  /// Persists and broadcasts profile fields after a successful profile save.
+  Future<void> syncProfileFromRow(Map<String, dynamic> row) async {
+    final sp = await SharedPreferences.getInstance();
+    final name = row['name']?.toString().trim() ?? '';
+    final email = row['email']?.toString().trim() ?? '';
+    final profileImage =
+        ProfileImage.sanitizePath(row['profile_image']?.toString());
+    final address = row['address']?.toString().trim() ?? '';
+    final phone = row['phone_number']?.toString().trim() ?? '';
+    final lat = row['latitude']?.toString().trim() ?? '';
+    final lng = row['longitude']?.toString().trim() ?? '';
+
+    if (name.isNotEmpty) {
+      await sp.setString('fullname', name);
+      _name = name;
+    }
+    if (email.isNotEmpty) {
+      await sp.setString('email', email);
+      _email = email;
+    }
+    if (profileImage.isNotEmpty) {
+      await sp.setString('profileImage', profileImage);
+      _profileImage = profileImage;
+    }
+    if (address.isNotEmpty) {
+      await sp.setString('address', address);
+      _address = address;
+    }
+    if (phone.isNotEmpty) {
+      await sp.setString('phoneNumber', phone);
+      _phoneNumber = phone;
+    }
+    if (lat.isNotEmpty) {
+      await sp.setString('latitude', lat);
+      _latitude = lat;
+    }
+    if (lng.isNotEmpty) {
+      await sp.setString('longitude', lng);
+      _longitude = lng;
+    }
+
+    notifyListeners();
   }
 
   static Future<bool> hasActiveSession() async {

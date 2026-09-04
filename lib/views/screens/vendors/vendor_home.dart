@@ -1,15 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'package:jebby/utils/api_headers.dart';
+import 'package:jebby/constants/app_url.dart';
 import 'package:jebby/utils/api_datetime.dart';
 import 'package:jebby/utils/profile_image.dart';
 import 'package:jebby/constants/color.dart';
@@ -55,7 +52,7 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
   String? profileImage;
   double averageRating = 0;
   int totalReviews = 0;
-  String Url = dotenv.env['baseUrlM'] ?? '';
+  String Url = AppUrl.baseUrlM;
 
   void profileData(BuildContext context) async {
     getUserDate()
@@ -77,32 +74,23 @@ class _VendorHomeScreenState extends State<VendorHomeScreen> {
 
   Future getProductsApi(String id) async {
     try {
-      final response = await http.get(
-        Uri.parse('$Url/UserProfileGetById/$id'),
-        headers: await ApiHeaders.json(),
-      );
-      var data = jsonDecode(response.body.toString());
-      if (data["data"] != null &&
-          data["data"] is List &&
-          (data["data"] as List).isNotEmpty) {
-        final profile = data["data"][0];
-        final apiAddress = profile["address"]?.toString() ?? "";
-        final apiImage = ProfileImage.sanitizePath(
-          profile["profile_image"]?.toString(),
-        );
-        final apiName = profile["name"]?.toString() ?? "";
-        if (mounted) {
-          setState(() {
-            profileAddress = apiAddress;
-            profileImage = apiImage;
-            if (apiName.isNotEmpty) fullname = apiName;
-          });
-        }
-        final prefs = await SharedPreferences.getInstance();
-        prefs.setString('address', apiAddress);
-        prefs.setString('profileImage', apiImage);
-        if (apiName.isNotEmpty) prefs.setString('fullname', apiName);
+      final row = await ApiRepository.shared.fetchUserProfileRow(id);
+      if (row == null) return;
+
+      final apiAddress = row['address']?.toString() ?? '';
+      final apiImage = ProfileImage.sanitizePath(row['profile_image']?.toString());
+      final apiName = row['name']?.toString() ?? '';
+      if (mounted) {
+        setState(() {
+          profileAddress = apiAddress;
+          profileImage = apiImage;
+          if (apiName.isNotEmpty) fullname = apiName;
+        });
       }
+      final prefs = await SharedPreferences.getInstance();
+      prefs.setString('address', apiAddress);
+      prefs.setString('profileImage', apiImage);
+      if (apiName.isNotEmpty) prefs.setString('fullname', apiName);
     } catch (e) {
       if (kDebugMode) {}
     }

@@ -30,6 +30,9 @@ class AppUrl {
   static String get subCategoryID => '$baseUrlM/subCategoryGetById/';
   static String cmsPage(String slug) => '$baseUrlM/cms/$slug';
   static String get userCredential => '$baseUrlM/UserProfileGetById/';
+  static String get userProfileInsert => '$baseUrlM/UserProfileInsert';
+  static String get userProfileUpdate => '$baseUrlM/UserProfileUpdate';
+  static String get productInsert => '$baseUrlM/productInsert';
   static String get allProducts => '$baseUrlM/getProducts';
   static String get getFromFavorite => '$baseUrlM/addToFavoriteGet/';
   static String get addToFavourite => '$baseUrlM/addToFavorite';

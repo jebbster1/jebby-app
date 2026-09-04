@@ -1,11 +1,7 @@
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
-import 'package:jebby/utils/api_headers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:jebby/views/screens/agreements/about_app.dart';
+import 'package:jebby/views/screens/agreements/maintenance_and_warranties.dart';
 import 'package:jebby/views/screens/agreements/insurance_and_indemnifications.dart';
 import 'package:jebby/views/screens/agreements/privacy_policy.dart';
 import 'package:jebby/views/screens/agreements/rental_agreement.dart';
@@ -30,6 +26,7 @@ import 'package:jebby/views/widgets/role_switcher_card.dart';
 import 'package:jebby/utils/profile_image.dart';
 import 'package:jebby/utils/show_snackbar.dart';
 import 'package:jebby/views/screens/support/provide_feedback.dart';
+import 'package:jebby/constants/app_url.dart';
 import 'package:jebby/repositories/auth_repository.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -114,7 +111,7 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
   String? fullname;
   String? email;
   String? role;
-  String Url = dotenv.env['baseUrlM'] ?? 'No url found';
+  String Url = AppUrl.baseUrlM;
 
   void _loadOnboardingStatus() async {
     final prefs = await SharedPreferences.getInstance();
@@ -328,7 +325,7 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
       ),
       MapEntry(
         'Maintenance & Warranties',
-        () => Get.to(AboutAppScreen()),
+        () => Get.to(() => const MaintenanceAndWarrantiesScreen()),
       ),
       MapEntry('Termination', () => Get.to(TerminationScreen())),
     ];
@@ -474,6 +471,7 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
 
   Widget getGuestDrawer(double res_width, double res_height, double ffem) {
     final sp = context.watch<SignInProvider>();
+    final usp = context.watch<UserViewModel>();
     final textScaleFactor = MediaQuery.of(context).textScaler.scale(1.0);
 
     return Container(
@@ -527,8 +525,8 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
                         ProfileImage.circularAvatar(
                           radius: 40,
                           baseUrl: Url,
-                          imagePath: imagesapi,
-                          isLoading: isLoadingImage,
+                          imagePath: _drawerAvatarPath(usp),
+                          isLoading: _drawerAvatarLoading(usp),
                         ),
                         SizedBox(width: 15),
                         Column(
@@ -676,8 +674,8 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
                           ProfileImage.circularAvatar(
                             radius: 40,
                             baseUrl: Url,
-                            imagePath: imagesapi,
-                            isLoading: isLoadingImage,
+                            imagePath: _drawerAvatarPath(usp),
+                            isLoading: _drawerAvatarLoading(usp),
                           ),
                           SizedBox(width: 15),
                           Column(
@@ -986,8 +984,8 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
                           ProfileImage.circularAvatar(
                             radius: 40,
                             baseUrl: Url,
-                            imagePath: imagesapi,
-                            isLoading: isLoadingImage,
+                            imagePath: _drawerAvatarPath(usp),
+                            isLoading: _drawerAvatarLoading(usp),
                           ),
                           SizedBox(width: 15),
                           Column(
@@ -1301,46 +1299,34 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
   var imagesapi = "";
   bool isLoadingImage = true;
 
+  String _drawerAvatarPath(UserViewModel usp) {
+    if (ProfileImage.isValidPath(usp.profileImage)) {
+      return usp.profileImage!;
+    }
+    return imagesapi;
+  }
+
+  bool _drawerAvatarLoading(UserViewModel usp) {
+    return isLoadingImage && !ProfileImage.isValidPath(usp.profileImage);
+  }
+
   Future getProductsApi(id) async {
     try {
-      final response = await http.get(
-        Uri.parse('${Url}/UserProfileGetById/${id}'),
-        headers: await ApiHeaders.json(),
-      );
-      var data = jsonDecode(response.body.toString());
-      if (data["data"].length != 0) {
-        if (mounted) {
-          setState(() {
-            imagesapi = ProfileImage.sanitizePath(
-              data["data"][0]["profile_image"]?.toString(),
-            );
-            isLoadingImage = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            isLoadingImage = false;
-          });
-        }
-      }
-
-      if (response.statusCode == 200) {
-        return data;
-      } else {
-        if (mounted) {
-          setState(() {
-            isLoadingImage = false;
-          });
-        }
+      final row = await ApiRepository.shared.fetchUserProfileRow(id.toString());
+      if (row == null) {
+        if (mounted) setState(() => isLoadingImage = false);
         return "No data";
       }
-    } catch (error) {
+
       if (mounted) {
         setState(() {
+          imagesapi = ProfileImage.sanitizePath(row['profile_image']?.toString());
           isLoadingImage = false;
         });
       }
+      return {'data': [row]};
+    } catch (error) {
+      if (mounted) setState(() => isLoadingImage = false);
       return "No data";
     }
   }

@@ -1,33 +1,26 @@
-import 'dart:async';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:jebby/provider/prodetail_provider.dart';
-
-import 'package:jebby/view_model/auth_view_model.dart';
-import 'package:jebby/Views/screens/auth/login.dart';
-import 'package:jebby/Views/screens/mainfolder/homemain.dart';
+import 'package:jebby/views/screens/auth/login.dart';
+import 'package:jebby/views/screens/navigation/home_main.dart';
+import 'package:jebby/view_models/auth_view_model.dart';
 import 'package:overlay_support/overlay_support.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'Services/firebase_authMethod.dart';
-import 'Services/provider/internet_provider.dart';
-import 'Services/provider/sign_in_provider.dart';
-import 'package:provider/provider.dart';
-
-import 'provider/get_products_provider.dart';
-import 'view_model/services/splash_services.dart';
-import 'view_model/user_view_model.dart';
-import 'view_model/reservation_view_model.dart';
-import 'package:flutter_stripe/flutter_stripe.dart';
-import 'Services/fcm_service.dart';
+import 'services/fcm_service.dart';
+import 'services/provider/internet_provider.dart';
+import 'services/provider/sign_in_provider.dart';
+import 'view_models/reservation_view_model.dart';
+import 'view_models/user_view_model.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp();
 
   const envFile = String.fromEnvironment(
@@ -41,7 +34,7 @@ void main() async {
 
   runApp(
     OverlaySupport.global(
-      child: MyApp(), // Replace with your actual app widget
+      child: MyApp(),
     ),
   );
 }
@@ -54,27 +47,14 @@ class MyApp extends StatelessWidget {
     var baseTheme = ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: Colors.black),
       useMaterial3: true,
+      scaffoldBackgroundColor: Colors.grey.shade100,
     );
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthViewModel()..getUserName()),
-        Provider<FirebaseAuthMethods>(
-          create: (_) => FirebaseAuthMethods(FirebaseAuth.instance),
-        ),
-        StreamProvider(
-          create: (context) => context.read<FirebaseAuthMethods>().authState,
-          initialData: null,
-        ),
         ChangeNotifierProvider(create: ((context) => SignInProvider())),
         ChangeNotifierProvider(create: ((context) => InternetProvider())),
         ChangeNotifierProvider(create: (_) => UserViewModel()),
-        ChangeNotifierProvider(create: (_) => UserNameProvider()),
-        ChangeNotifierProvider<ProductProvider>(
-          create: (context) => ProductProvider(),
-        ),
-        ChangeNotifierProvider<ProDetailProvider>(
-          create: (context) => ProDetailProvider(),
-        ),
         ChangeNotifierProvider(create: (_) => ReservationViewModel()),
       ],
       child: GetMaterialApp(
@@ -83,132 +63,65 @@ class MyApp extends StatelessWidget {
         theme: baseTheme.copyWith(
           textTheme: GoogleFonts.interTextTheme(baseTheme.textTheme),
         ),
-        home: SplashScreen(),
+        home: const AppBootstrap(),
       ),
     );
   }
 }
 
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+class AppBootstrap extends StatefulWidget {
+  const AppBootstrap({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  State<AppBootstrap> createState() => _AppBootstrapState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
-  SplashServices splashServices = SplashServices();
-
+class _AppBootstrapState extends State<AppBootstrap> {
   @override
   void initState() {
-      isLogin();
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _routeInitialScreen());
   }
 
-  var Name;
+  Future<void> _routeInitialScreen() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final prefs = await SharedPreferences.getInstance();
+      final name = prefs.getString('fullname') ?? '';
+      final hasSession = await UserViewModel.hasActiveSession();
+      final isGuest =
+          name == 'Guest' && (prefs.getString('role')?.trim() ?? '') == 'Guest';
 
-  void isLogin() async {
-    FirebaseAuth auth = FirebaseAuth.instance;
-    final user = auth.currentUser;
-    SharedPreferences sharedPreferences = await SharedPreferences.getInstance();
-    Name = sharedPreferences.getString('fullname') ?? "";
+      if (user != null && hasSession) {
+        _goTo(const MainScreen());
+        return;
+      }
 
-    final hasSession = await UserViewModel.hasActiveSession();
-    final isGuest = Name == "Guest" &&
-        (sharedPreferences.getString('role')?.trim() ?? '') == "Guest";
+      if (!mounted) return;
+      context.read<AuthViewModel>().userName = name;
 
-    if (user != null && hasSession) {
-      Timer(const Duration(seconds: 2), () {
-        Get.offAll(() => MainScreen());
-      });
-      return;
+      if (isGuest) {
+        _goTo(const MainScreen());
+        return;
+      }
+
+      if (hasSession) {
+        _goTo(const MainScreen());
+        return;
+      }
+
+      _goTo(const LoginScreen());
+    } catch (_) {
+      _goTo(const LoginScreen());
     }
+  }
 
-    context.read<AuthViewModel>().userName = Name;
-    if (isGuest) {
-      Timer(const Duration(seconds: 2), () {
-        Get.offAll(() => MainScreen());
-      });
-    } else if (hasSession) {
-      splashServices.checkAuthentication(context);
-    } else {
-      Timer(const Duration(seconds: 2), () {
-        Get.offAll(() => LoginScreen());
-      });
-    }
+  void _goTo(Widget page) {
+    Get.offAll(() => page);
   }
 
   @override
   Widget build(BuildContext context) {
-    double res_width = MediaQuery.of(context).size.width;
-    double res_height = MediaQuery.of(context).size.height;
-    return Container(
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: AssetImage("assets/images/onboarding.png"),
-          fit: BoxFit.cover,
-        ),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Container(
-          width: double.infinity,
-          child: Column(
-            children: [
-              SizedBox(height: res_height * 0.1),
-              Container(
-                width: res_width * 0.6,
-                child: Image.asset('assets/images/appicon.png'),
-              ),
-              SizedBox(height: res_height * 0.34),
-              Container(
-                width: res_width * 0.8,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Explore Renting At\nYour Fingertips',
-                      textAlign: TextAlign.start,
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 23,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              SizedBox(height: res_height * 0.018),
-              Container(
-                width: res_width * 0.8,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-
-                  children: [
-                    Container(
-                      width: res_width * 0.7,
-                      child: Text(
-                        'Enjoy these pre-made components and worry only about creating the best product ever.',
-                        textAlign: TextAlign.start,
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w300,
-                          fontSize: 16,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-
-
-
-            ],
-          ),
-        ),
-      ),
-    );
+    return ColoredBox(color: Colors.grey.shade100);
   }
 }

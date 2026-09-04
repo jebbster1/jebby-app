@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:jebby/res/color.dart';
+import 'package:jebby/constants/color.dart';
 
 class ProfileImage {
   static const assetPath = 'assets/images/blankuser.png';

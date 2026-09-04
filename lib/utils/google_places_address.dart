@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
-import 'package:jebby/model/provider_onboarding_data.dart';
+import 'package:jebby/models/provider_onboarding_data.dart';
 
 class ParsedUsAddress {
   final String line1;

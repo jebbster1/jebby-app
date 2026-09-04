@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
-import 'package:jebby/Views/screens/auth/login.dart';
+import 'package:jebby/views/screens/auth/login.dart';
 import 'package:jebby/utils/show_snackbar.dart';
-import 'package:jebby/view_model/user_view_model.dart';
+import 'package:jebby/view_models/user_view_model.dart';
 
 class ApiSession {
   static bool _redirecting = false;

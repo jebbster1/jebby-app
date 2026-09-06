@@ -1,23 +1,18 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/constants/color.dart';
+import 'package:jebby/utils/show_snackbar.dart';
+import 'package:jebby/view_models/auth_view_model.dart';
+import 'package:jebby/views/screens/auth/login.dart';
 import 'package:otp_text_field/otp_text_field.dart';
 import 'package:otp_text_field/style.dart';
 import 'package:provider/provider.dart';
 
-import '../../../utils/show_snackbar.dart';
-import '../../../view_models/auth_view_model.dart';
-
 class OtpScreen extends StatefulWidget {
-  final String? email;
-  final dynamic name;
-  final dynamic password;
-  final dynamic role;
-  final bool isForgotPasswordFlow;
-
-  OtpScreen({
+  const OtpScreen({
     super.key,
     this.email,
     this.name,
@@ -26,14 +21,29 @@ class OtpScreen extends StatefulWidget {
     this.isForgotPasswordFlow = false,
   });
 
+  final String? email;
+  final dynamic name;
+  final dynamic password;
+  final dynamic role;
+  final bool isForgotPasswordFlow;
+
+  static const String heroAsset = LoginScreen.heroAsset;
+  static const String logoAsset = LoginScreen.logoAsset;
+
   @override
   State<OtpScreen> createState() => _OtpScreenState();
 }
 
 class _OtpScreenState extends State<OtpScreen> {
-  OtpFieldController otpController = OtpFieldController();
-  final TextEditingController _emailAutofillController = TextEditingController();
-  String? OtpValue;
+  static Color get _rippleSplash => AppColors.jebbyBlue.withValues(alpha: 0.12);
+
+  static Color get _rippleHighlight =>
+      AppColors.jebbyBlue.withValues(alpha: 0.06);
+
+  final OtpFieldController _otpController = OtpFieldController();
+  final TextEditingController _emailAutofillController =
+      TextEditingController();
+  String? _otpValue;
 
   @override
   void dispose() {
@@ -44,8 +54,8 @@ class _OtpScreenState extends State<OtpScreen> {
   void _syncEmailOtpFromAutofill(String value) {
     final digits = value.replaceAll(RegExp(r'\D'), '');
     if (digits.isEmpty) {
-      otpController.clear();
-      OtpValue = null;
+      _otpController.clear();
+      _otpValue = null;
       return;
     }
 
@@ -55,8 +65,8 @@ class _OtpScreenState extends State<OtpScreen> {
       chars.add('');
     }
 
-    otpController.set(chars);
-    OtpValue = code.length == 4 ? code : null;
+    _otpController.set(chars);
+    _otpValue = code.length == 4 ? code : null;
 
     if (_emailAutofillController.text != code) {
       _emailAutofillController.value = TextEditingValue(
@@ -66,277 +76,430 @@ class _OtpScreenState extends State<OtpScreen> {
     }
   }
 
+  void _handleResend(AuthViewModel authViewModel) {
+    if (widget.isForgotPasswordFlow) {
+      authViewModel.resendForgotPasswordOtp(widget.email.toString());
+      return;
+    }
+
+    if ((widget.password ?? '').toString().isEmpty) {
+      showAppErrorSnackbar('Go back and sign in again to request a new code.');
+      return;
+    }
+
+    authViewModel.resendRegistrationOtp(
+      email: widget.email.toString(),
+      password: widget.password.toString(),
+    );
+  }
+
+  void _handleVerify(AuthViewModel authViewModel) {
+    if (_otpValue == null || _otpValue!.isEmpty) {
+      showAppErrorSnackbar(
+        'Please enter the verification code',
+        title: 'Required',
+      );
+      return;
+    }
+
+    if (widget.isForgotPasswordFlow) {
+      authViewModel.otpForgetPasswordApi({
+        'email': widget.email,
+        'otp': _otpValue,
+      }, context);
+      return;
+    }
+
+    authViewModel.otpRegisterApi({
+      'email': widget.email,
+      'otp': _otpValue,
+      'password': widget.password,
+    }, context);
+  }
+
   @override
   Widget build(BuildContext context) {
-    double res_width = MediaQuery.of(context).size.width;
-    double res_height = MediaQuery.of(context).size.height;
+    final authViewModel = context.watch<AuthViewModel>();
+    final textScale = MediaQuery.textScalerOf(context);
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final logoSize = keyboardOpen ? 74.0 : 88.0;
+    final logoRadius = keyboardOpen ? 17.0 : 20.0;
+    final wordmarkSize = keyboardOpen ? 21.0 : 24.0;
+    const logoLift = 32.0;
+    const heroImageLift = 40.0;
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: true,
-        title: Text(
-          'OTP Verification',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-            color: Colors.black87,
-          ),
-        ),
-        leading: InkWell(
-          onTap: () => Get.back(),
-          borderRadius: BorderRadius.circular(50),
-          child: const Icon(Icons.arrow_back_ios_new, color: Colors.black, size: 20),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+      resizeToAvoidBottomInset: true,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final cardHeight = constraints.maxHeight * 0.68;
+
+          return Stack(
+            fit: StackFit.expand,
             children: [
-              SizedBox(height: res_height * 0.02),
-              Center(
-                child: Image.asset(
-                  'assets/images/otp.png',
-                  width: res_width * 0.5,
-                  fit: BoxFit.contain,
+              Positioned.fill(
+                child: Transform.translate(
+                  offset: const Offset(0, -heroImageLift),
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                    child: Image.asset(
+                      OtpScreen.heroAsset,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.topCenter,
+                    ),
+                  ),
                 ),
               ),
-              SizedBox(height: res_height * 0.04),
-              Text(
-                'Enter confirmation code',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 24,
-                  color: Colors.black87,
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.08),
+                        Colors.black.withValues(alpha: 0.28),
+                        Colors.black.withValues(alpha: 0.55),
+                      ],
+                      stops: const [0.0, 0.55, 1.0],
+                    ),
+                  ),
                 ),
               ),
-              SizedBox(height: 12),
-              Text(
-                'A 4-digit code was sent to ${widget.email}',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  color: Colors.grey.shade600,
-                  height: 1.4,
-                ),
-              ),
-              SizedBox(height: res_height * 0.05),
-              AutofillGroup(
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    IgnorePointer(
-                      child: Theme(
-                        data: Theme.of(context).copyWith(
-                          textSelectionTheme: TextSelectionThemeData(
-                            cursorColor: AppColors.primaryColor,
-                            selectionColor:
-                                AppColors.primaryColor.withOpacity(0.3),
-                          ),
-                        ),
-                        child: OTPTextField(
-                          controller: otpController,
-                          length: 4,
-                          width: res_width,
-                          textFieldAlignment: MainAxisAlignment.spaceEvenly,
-                          fieldWidth: 56,
-                          fieldStyle: FieldStyle.box,
-                          otpFieldStyle: OtpFieldStyle(
-                            backgroundColor: Colors.white,
-                            borderColor: Colors.grey.shade300,
-                            enabledBorderColor: Colors.grey.shade300,
-                            focusBorderColor: AppColors.primaryColor,
-                          ),
-                          outlineBorderRadius: 12,
-                          style: GoogleFonts.inter(
-                            fontSize: 24,
+              Positioned(
+                top: 0,
+                left: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 16, top: 8),
+                    child: Material(
+                      color: Colors.white,
+                      shape: const CircleBorder(),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: Get.back,
+                        customBorder: const CircleBorder(),
+                        splashColor: _rippleSplash,
+                        highlightColor: _rippleHighlight,
+                        child: const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: Icon(
+                            Icons.arrow_back_ios_new,
                             color: Colors.black,
-                            fontWeight: FontWeight.w600,
+                            size: 18,
                           ),
-                          onChanged: (pin) {},
-                          onCompleted: (pin) {
-                            OtpValue = pin;
-                          },
                         ),
                       ),
                     ),
-                    SizedBox(
-                      width: res_width,
-                      height: 56,
-                      child: TextField(
-                        controller: _emailAutofillController,
-                        autofillHints: const [AutofillHints.oneTimeCode],
-                        keyboardType: TextInputType.number,
-                        textInputAction: TextInputAction.done,
-                        maxLength: 4,
-                        showCursor: false,
-                        enableSuggestions: true,
-                        autocorrect: false,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        style: const TextStyle(
-                          color: Colors.transparent,
-                          fontSize: 1,
-                          height: 1,
-                        ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          counterText: '',
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                        onChanged: _syncEmailOtpFromAutofill,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-              SizedBox(height: res_height * 0.04),
-              Consumer<AuthViewModel>(
-                builder: (context, authViewMode, _) {
-                  final isResending = authViewMode.resendOtpLoading;
-                  final isVerifying = authViewMode.signUpLoading;
-
-                  return InkWell(
-                    onTap: (isResending || isVerifying)
-                        ? null
-                        : () {
-                            if (widget.isForgotPasswordFlow) {
-                              authViewMode.resendForgotPasswordOtp(
-                                widget.email.toString(),
-                              );
-                            } else if ((widget.password ?? '')
-                                .toString()
-                                .isEmpty) {
-                              showAppErrorSnackbar(
-                                'Go back and sign in again to request a new code.',
-                              );
-                            } else {
-                              authViewMode.resendRegistrationOtp(
-                                email: widget.email.toString(),
-                                password: widget.password.toString(),
-                              );
-                            }
-                          },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: cardHeight + logoLift,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOut,
+                        width: logoSize,
+                        height: logoSize,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(logoRadius),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(logoRadius),
+                          child: Image.asset(
+                            OtpScreen.logoAsset,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
+                      SizedBox(height: keyboardOpen ? 4 : 5),
+                      AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOut,
+                        style: TextStyle(
+                          fontFamily: 'Nunito',
+                          fontWeight: FontWeight.w800,
+                          fontSize: textScale.scale(wordmarkSize),
+                          color: Colors.white,
+                          letterSpacing: 0.2,
+                        ),
+                        child: const Text('Jebby'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: cardHeight,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(30),
+                    topRight: Radius.circular(30),
+                  ),
+                  child: Container(
+                    color: Colors.white,
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        24,
+                        24,
+                        24,
+                        16 + bottomInset,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (isResending) ...[
-                            SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.primaryColor,
+                          const _VerificationIcon(),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Enter confirmation code',
+                            style: TextStyle(
+                              fontFamily: 'Nunito',
+                              fontWeight: FontWeight.w800,
+                              fontSize: textScale.scale(28),
+                              color: AppColors.jebbyTextPrimary,
+                              height: 1.15,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'A 4-digit code was sent to ${widget.email ?? 'your email'}.',
+                            style: TextStyle(
+                              fontFamily: 'Nunito',
+                              fontWeight: FontWeight.w400,
+                              fontSize: textScale.scale(15),
+                              color: AppColors.jebbyTextMuted,
+                              height: 1.45,
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          AutofillGroup(
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                IgnorePointer(
+                                  child: Theme(
+                                    data: Theme.of(context).copyWith(
+                                      textSelectionTheme:
+                                          TextSelectionThemeData(
+                                            cursorColor: AppColors.jebbyBlue,
+                                            selectionColor: AppColors.jebbyBlue
+                                                .withValues(alpha: 0.3),
+                                          ),
+                                    ),
+                                    child: OTPTextField(
+                                      controller: _otpController,
+                                      length: 4,
+                                      width: screenWidth - 48,
+                                      textFieldAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      fieldWidth: 56,
+                                      fieldStyle: FieldStyle.box,
+                                      otpFieldStyle: OtpFieldStyle(
+                                        backgroundColor: Colors.white,
+                                        borderColor: Colors.grey.shade300,
+                                        enabledBorderColor:
+                                            Colors.grey.shade300,
+                                        focusBorderColor: AppColors.jebbyBlue,
+                                      ),
+                                      outlineBorderRadius: 12,
+                                      style: TextStyle(
+                                        fontFamily: 'Nunito',
+                                        fontSize: textScale.scale(24),
+                                        color: AppColors.jebbyTextPrimary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      onChanged: (_) {},
+                                      onCompleted: (pin) {
+                                        _otpValue = pin;
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: screenWidth - 48,
+                                  height: 56,
+                                  child: TextField(
+                                    controller: _emailAutofillController,
+                                    autofillHints: const [
+                                      AutofillHints.oneTimeCode,
+                                    ],
+                                    keyboardType: TextInputType.number,
+                                    textInputAction: TextInputAction.done,
+                                    maxLength: 4,
+                                    showCursor: false,
+                                    enableSuggestions: true,
+                                    autocorrect: false,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
+                                    style: const TextStyle(
+                                      color: Colors.transparent,
+                                      fontSize: 1,
+                                      height: 1,
+                                    ),
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      counterText: '',
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                    onChanged: _syncEmailOtpFromAutofill,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Center(
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap:
+                                    (authViewModel.resendOtpLoading ||
+                                            authViewModel.signUpLoading)
+                                        ? null
+                                        : () => _handleResend(authViewModel),
+                                borderRadius: BorderRadius.circular(8),
+                                splashColor: _rippleSplash,
+                                highlightColor: _rippleHighlight,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  child:
+                                      authViewModel.resendOtpLoading
+                                          ? Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color:
+                                                          AppColors.jebbyBlue,
+                                                    ),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              Text(
+                                                'Sending code...',
+                                                style: TextStyle(
+                                                  fontFamily: 'Nunito',
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: textScale.scale(15),
+                                                  color:
+                                                      AppColors.jebbyTextMuted,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                          : Text(
+                                            'Resend code',
+                                            style: TextStyle(
+                                              fontFamily: 'Nunito',
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: textScale.scale(15),
+                                              color: AppColors.jebbyBlue,
+                                            ),
+                                          ),
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            Text(
-                              'Sending code...',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
-                                color: Colors.grey.shade500,
+                          ),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed:
+                                  (authViewModel.signUpLoading ||
+                                          authViewModel.resendOtpLoading)
+                                      ? null
+                                      : () => _handleVerify(authViewModel),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.jebbyBlue,
+                                disabledBackgroundColor: AppColors.jebbyBlue
+                                    .withValues(alpha: 0.55),
+                                foregroundColor: Colors.white,
+                                disabledForegroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(52),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                               ),
+                              child:
+                                  authViewModel.signUpLoading
+                                      ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                      : Text(
+                                        'Continue',
+                                        style: TextStyle(
+                                          fontFamily: 'Nunito',
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: textScale.scale(16),
+                                        ),
+                                      ),
                             ),
-                          ] else
-                            Text(
-                              'Resend code',
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
-                                color: AppColors.darkBlue,
-                              ),
-                            ),
+                          ),
                         ],
                       ),
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
-              SizedBox(height: res_height * 0.04),
-              Consumer<AuthViewModel>(
-                builder: (context, authViewMode, _) {
-                  final isVerifying = authViewMode.signUpLoading;
-                  final isResending = authViewMode.resendOtpLoading;
-
-                  if (isVerifying) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: CircularProgressIndicator(
-                        color: AppColors.primaryColor,
-                      ),
-                    );
-                  }
-
-                  return SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      onPressed: isResending
-                          ? null
-                          : () {
-                              if (OtpValue == null || OtpValue!.isEmpty) {
-                                showAppErrorSnackbar(
-                                  'Please Enter Otp',
-                                  title: 'Required',
-                                );
-                              } else if (widget.isForgotPasswordFlow) {
-                                authViewMode.otpForgetPasswordApi(
-                                  {
-                                    "email": widget.email,
-                                    "otp": OtpValue,
-                                  },
-                                  context,
-                                );
-                              } else {
-                                authViewMode.otpRegisterApi(
-                                  {
-                                    "email": widget.email,
-                                    "otp": OtpValue,
-                                    "password": widget.password,
-                                  },
-                                  context,
-                                );
-                              }
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                      ),
-                      child: Text(
-                        'Continue',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              SizedBox(height: res_height * 0.02),
             ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _VerificationIcon extends StatelessWidget {
+  const _VerificationIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(
+            Icons.shield_outlined,
+            size: 44,
+            color: AppColors.jebbyBlue.withValues(alpha: 0.85),
           ),
-        ),
+          Icon(Icons.pin, size: 16, color: AppColors.jebbyAccentOrange),
+        ],
       ),
     );
   }

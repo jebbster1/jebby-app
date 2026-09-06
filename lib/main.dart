@@ -5,8 +5,10 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:jebby/constants/app_preferences.dart';
 import 'package:jebby/views/screens/auth/login.dart';
 import 'package:jebby/views/screens/navigation/home_main.dart';
+import 'package:jebby/views/screens/auth/get_started.dart';
 import 'package:jebby/view_models/auth_view_model.dart';
 import 'package:overlay_support/overlay_support.dart';
 import 'package:provider/provider.dart';
@@ -107,6 +109,12 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
       if (hasSession) {
         _goTo(const MainScreen());
+        return;
+      }
+
+      final hasSeenGetStarted = await AppPreferences.hasSeenRenterGetStarted();
+      if (!hasSeenGetStarted) {
+        _goTo(const GetStartedScreen());
         return;
       }
 

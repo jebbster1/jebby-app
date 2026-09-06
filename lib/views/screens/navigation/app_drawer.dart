@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:jebby/constants/app_preferences.dart';
 import 'package:jebby/views/screens/agreements/maintenance_and_warranties.dart';
 import 'package:jebby/views/screens/agreements/insurance_and_indemnifications.dart';
 import 'package:jebby/views/screens/agreements/privacy_policy.dart';
@@ -392,6 +393,7 @@ class _AppDrawerScreenState extends State<AppDrawerScreen> {
       await userPreference.remove();
       authViewModel.userName = '';
       await sharedPreferences.clear();
+      await AppPreferences.restoreRenterGetStartedFlag();
       try {
         await sp.userSignOut();
       } catch (_) {

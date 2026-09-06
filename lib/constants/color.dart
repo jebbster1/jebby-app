@@ -16,4 +16,11 @@ class AppColors {
   static const Color lightBlue = Color.fromARGB(255, 220, 233, 255);
 
   static const Color buttonColor = Colors.green;
+
+  /// Renter redesign tokens (mission spec).
+  static const Color jebbyBlue = Color(0xFF499AE5);
+  static const Color jebbyAccentOrange = Color(0xFFFBA105);
+  static const Color jebbyBackground = Color(0xFFF4F7FA);
+  static const Color jebbyTextPrimary = Color(0xFF111827);
+  static const Color jebbyTextMuted = Color(0xFF667085);
 }

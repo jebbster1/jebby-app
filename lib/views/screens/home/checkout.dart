@@ -7,7 +7,6 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jebby/services/provider/sign_in_provider.dart';
-import 'package:jebby/views/screens/auth/register.dart';
 import 'package:jebby/constants/color.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -87,7 +86,7 @@ class CheckoutScreen extends StatefulWidget {
 }
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
-  final termscontroller = Get.put(TermsController());
+  bool _termsAccepted = false;
 
   /// Same palette as [ProductDetailScreen] for a consistent renter flow.
   static const Color _accent = Color(0xFFF6AE02);
@@ -595,12 +594,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            Obx(() {
-              final termsAccepted = termscontroller.termsValue.value;
-              final canCheckout = termsAccepted && !_checkoutLoading;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                   Theme(
                     data: Theme.of(context).copyWith(
                       checkboxTheme: CheckboxThemeData(
@@ -631,9 +627,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             color: _titleDark,
                           ),
                         ),
-                        value: termsAccepted,
+                        value: _termsAccepted,
                         onChanged: (v) {
-                          termscontroller.chanegValue(v ?? false);
+                          setState(() => _termsAccepted = v ?? false);
                         },
                         controlAffinity: ListTileControlAffinity.leading,
                       ),
@@ -654,7 +650,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      onPressed: canCheckout ? _onCheckoutPressed : null,
+                      onPressed: _termsAccepted && !_checkoutLoading
+                          ? _onCheckoutPressed
+                          : null,
                       child: _checkoutLoading
                           ? const SizedBox(
                               width: 22,
@@ -668,8 +666,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     ),
                   ),
                 ],
-              );
-            }),
+              ),
           ],
         ),
       ),
